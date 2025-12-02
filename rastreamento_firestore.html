@@ -60,7 +60,7 @@
             <h2 class="text-2xl font-semibold text-gray-800">Interface do Entregador (Sua Visão)</h2>
 
             <!-- AVISO SOBRE A URL MOCK -->
-            <div class="p-4 bg-yellow-100 text-yellow-700 rounded-lg shadow-md border border-yellow-300">
+            <div id="firestore-warning" class="p-4 bg-yellow-100 text-yellow-700 rounded-lg shadow-md border border-yellow-300">
                 <h3 class="font-bold">⚠️ ATENÇÃO: DADOS EM TEMPO REAL (FIREBASE)</h3>
                 <p class="text-sm mt-1">
                     Esta versão usa o **Firebase Firestore**. A localização é partilhada em tempo real e funcionará em dispositivos diferentes quando o arquivo for hospedado.
@@ -157,17 +157,23 @@
         import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        // REMOVIDO: import 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-        // Leaflet agora é carregado via script tag padrão antes deste módulo.
-
+        
         // --- Configurações Firebase e Constantes ---
-        // As variáveis __app_id, __firebase_config e __initial_auth_token são fornecidas pelo ambiente Canvas
+        
+        // Variáveis fornecidas pelo ambiente Canvas (devem ser 'undefined' no GitHub Pages)
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
         
+        // ******************************************************************************
+        // * PARA ATIVAR O RASTREAMENTO EM TEMPO REAL (FIREBASE) *
+        // * Você deve substituir a linha abaixo pelo seu objeto de configuração do Firebase.
+        // * EX: const firebaseConfig = { apiKey: "...", authDomain: "...", projectId: "...", ... };
+        // * (Mantenha a linha abaixo se quiser APENAS a funcionalidade local/GPS)
+        // ******************************************************************************
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        
         let app, db, auth, userId;
-        let isAuthReady = false; 
+        let isAuthReady = false; // Indica se o Firebase está conectado (com ou sem config)
 
         // Coordenadas iniciais de Goiânia Central (Fallback caso o GPS falhe)
         const FALLBACK_LAT = -16.6869; 
@@ -222,7 +228,7 @@
          * Salva o estado atual da entrega no Firestore.
          */
         const saveDeliveryState = async (deliveryId, status, lat, lon) => {
-            if (!isAuthReady) return console.error("Firebase não está pronto para salvar dados.");
+            if (!isAuthReady || !db) return console.warn("Firebase não está pronto ou não está configurado para salvar dados.");
             
             const deliveryRef = doc(db, getDeliveryPath(deliveryId));
             const state = {
@@ -246,7 +252,7 @@
          * Inicializa o listener em tempo real (onSnapshot) para o modo cliente.
          */
         const setupRealtimeTracker = (deliveryId, updateCallback) => {
-            if (!isAuthReady) return console.error("Firebase não está pronto para rastrear.");
+            if (!isAuthReady || !db) return console.warn("Firebase não está pronto ou não está configurado para rastrear.");
             
             // Cancela o listener anterior se houver
             if (unsubscribeTracker) {
@@ -338,8 +344,10 @@
         
         // --- Driver (Entregador) Logic ---
         window.startDelivery = () => {
-            if (!isAuthReady) {
-                updateStatusMessage('Aguarde a ligação ao Firebase antes de iniciar.', 'yellow');
+            if (!window.isGpsActive) {
+                updateStatusMessage('O GPS precisa de estar ativo para iniciar a rota. Clique em "Diagnóstico GPS".', 'red');
+                document.getElementById('gps-status').classList.add('shake-animation');
+                setTimeout(() => document.getElementById('gps-status').classList.remove('shake-animation'), 850);
                 return;
             }
 
@@ -348,12 +356,7 @@
                 updateStatusMessage('Por favor, insira o ID do Pedido.', 'red');
                 return;
             }
-            if (!window.isGpsActive) {
-                updateStatusMessage('O GPS precisa de estar ativo para iniciar a rota. Clique em "Diagnóstico GPS".', 'red');
-                document.getElementById('gps-status').classList.add('shake-animation');
-                setTimeout(() => document.getElementById('gps-status').classList.remove('shake-animation'), 850);
-                return;
-            }
+            
 
             if (window.deliveryInterval) {
                  stopDelivery(true);
@@ -381,20 +384,24 @@
             
             // Define a função de atualização que SALVA no Firestore
             const updateLocationAndSave = (lat, lon) => {
-                if (lat && lon) {
+                let statusMessage = `Em Rota! Localização REAL atualizada: ${new Date().toLocaleTimeString('pt-BR')} (Lat: ${lat.toFixed(6)}, Lon: ${lon.toFixed(6)})`;
+                let statusClass = 'bg-green-100 text-green-700';
+                
+                if (isAuthReady) {
                     saveDeliveryState(window.currentDeliveryId, "Em Rota", lat, lon);
-                    statusInfo.textContent = `Em Rota! Localização REAL atualizada: ${new Date().toLocaleTimeString('pt-BR')} (Lat: ${lat.toFixed(6)}, Lon: ${lon.toFixed(6)}) - A salvar no Firestore.`;
-                    statusInfo.classList.remove('hidden', 'bg-yellow-100', 'bg-red-100');
-                    statusInfo.classList.add('bg-green-100', 'text-green-700');
+                    statusMessage += " - A salvar no Firestore.";
                 } else {
-                    statusInfo.textContent = `Em Rota, mas falha temporária ao obter o GPS.`;
-                    statusInfo.classList.remove('hidden', 'bg-green-100', 'bg-red-100');
-                    statusInfo.classList.add('bg-yellow-100', 'text-yellow-700');
+                    statusMessage += " - SINCRONIZAÇÃO FIREBASE DESATIVADA.";
+                    statusClass = 'bg-yellow-100 text-yellow-700';
                 }
+                
+                statusInfo.textContent = statusMessage;
+                statusInfo.classList.remove('hidden', 'bg-yellow-100', 'bg-red-100', 'bg-green-100', 'text-yellow-700', 'text-red-700', 'text-green-700');
+                statusInfo.classList.add(statusClass);
             };
             
             // Inicia o rastreamento e o intervalo do GPS
-            updateStatusMessage("A iniciar Rota usando GPS REAL e Firebase...", 'yellow');
+            updateStatusMessage("A iniciar Rota usando GPS REAL...", 'yellow');
             
             // Função que tenta obter a localização real e armazena
             const getLocationAndSave = () => {
@@ -422,9 +429,13 @@
 
             // Apenas atualiza o status se for um encerramento real (não apenas uma troca de tela)
             if (window.currentDeliveryId && !isSwitching) {
-                 // Salva o estado final no Firestore. Não precisamos da lat/lon atual.
-                 await saveDeliveryState(window.currentDeliveryId, "Entregue", FALLBACK_LAT, FALLBACK_LON);
-                 document.getElementById('delivery-status-info').textContent = "Status atualizado para: Entregue! Rota encerrada no Firebase.";
+                 if(isAuthReady) {
+                     // Salva o estado final no Firestore. Não precisamos da lat/lon atual.
+                     await saveDeliveryState(window.currentDeliveryId, "Entregue", FALLBACK_LAT, FALLBACK_LON);
+                     document.getElementById('delivery-status-info').textContent = "Status atualizado para: Entregue! Rota encerrada no Firebase.";
+                 } else {
+                     document.getElementById('delivery-status-info').textContent = "Status atualizado para: Entregue! Sincronização Firebase Desativada.";
+                 }
             }
             
             document.getElementById('start-delivery-btn').classList.remove('hidden');
@@ -433,7 +444,6 @@
             document.getElementById('whatsapp-message-output').classList.add('hidden');
             document.getElementById('whatsapp-message-output').value = "";
             document.getElementById('simulate-customer-btn').classList.add('hidden');
-            // window.currentDeliveryId = null; // Mantemos o ID para o LLM gerar a mensagem, mesmo se a rota parou.
             
             // Limpa as cores do status
             document.getElementById('delivery-status-info').className = 'p-3 mb-4 text-sm bg-yellow-100 text-yellow-700 rounded-lg hidden';
@@ -451,8 +461,6 @@
                 return;
             }
             if (!window.currentDeliveryId) {
-                 // O cliente deve rastrear o ID que o entregador *acabou* de iniciar ou que está digitado no campo
-                 // Usamos o deliveryId do input para simulação, mesmo que o interval não esteja rodando (para teste)
                  // Se o rastreamento real não estiver ativo, o cliente verá "A aguardar Início da Rota"
                  window.currentDeliveryId = deliveryId;
             }
@@ -606,7 +614,7 @@
         };
 
         const initCustomerTracker = (deliveryId) => {
-            console.log(`[Rastreador] A iniciar rastreamento Firebase para o ID: ${deliveryId}`);
+            console.log(`[Rastreador] A iniciar rastreamento para o ID: ${deliveryId}`);
             document.getElementById('tracking-delivery-id').textContent = deliveryId;
             hideAllInterfaces(); 
             displayUI('customer-tracker-interface'); 
@@ -643,8 +651,15 @@
             }
 
 
-            // Configura o listener em tempo real no Firestore
-            setupRealtimeTracker(deliveryId, updateCustomerTracker);
+            // Configura o listener em tempo real no Firestore, apenas se estiver ativo
+            if (isAuthReady) {
+                 setupRealtimeTracker(deliveryId, updateCustomerTracker);
+            } else {
+                updateCustomerTracker({ status: "Rastreamento em Tempo Real Desativado", latitude: FALLBACK_LAT, longitude: FALLBACK_LON });
+                document.getElementById('customer-status-display').classList.add('bg-red-100', 'text-red-700');
+                document.getElementById('firestore-status-alert').textContent = '🔴 A sincronização em tempo real está desativada (Configuração Firebase ausente).';
+                document.getElementById('firestore-status-alert').classList.remove('hidden');
+            }
         };
         
         // --- Função para Alternar Interface ---
@@ -666,68 +681,92 @@
 
             if (trackingId) {
                 // Modo Cliente (Rastreador)
-                updateStatusMessage("A carregar Rastreador do Cliente (FIREBASE)...", 'blue');
+                updateStatusMessage("A carregar Rastreador do Cliente...", 'blue');
                 initCustomerTracker(trackingId);
             } else {
                 // Modo Entregador (Início do app)
                 displayUI('driver-interface');
                 checkGpsStatus(); // Verifica o GPS ao iniciar
+                
+                // Atualiza o aviso para o entregador
+                if (!isAuthReady) {
+                    document.getElementById('firestore-warning').innerHTML = `
+                        <h3 class="font-bold">⚠️ ATENÇÃO: FIREBASE DESATIVADO</h3>
+                        <p class="text-sm mt-1">
+                            A aplicação está a correr sem as credenciais de configuração do Firebase. O rastreamento em tempo real **NÃO** funcionará. Apenas a lógica do GPS, o Mapa e a função de Mensagem WhatsApp estão ativas.
+                        </p>
+                    `;
+                }
             }
         };
 
-        // --- Inicialização do Firebase ---
+        // --- Inicialização do Firebase (Robustez Aumentada) ---
         const initializeFirebase = async () => {
              updateStatusMessage("1. A inicializar Firebase...", 'blue');
              document.getElementById('firestore-status-alert').classList.remove('hidden');
 
+             let localApp, localAuth;
+
             try {
-                // 1. Inicializar o App se ainda não estiver inicializado
+                // Verifica se o objeto de configuração tem chaves (se está vazio, significa que não foi configurado)
+                const hasConfig = Object.keys(firebaseConfig).length > 0;
+
+                if (!hasConfig) {
+                    // Cenario 1: Fora do ambiente Canvas/GitHub Pages SEM configuração manual
+                    isAuthReady = false;
+                    document.getElementById('firestore-status-alert').textContent = `🔴 Firebase: Configuração não carregada. A sincronização está desativada.`;
+                    console.warn("Firebase Config não encontrada. A aplicação funcionará localmente sem sincronização em tempo real.");
+                    // Continua a execução, pulando as chamadas Firebase
+                    checkAndDisplayInterface(null); 
+                    return; 
+                }
+
+
+                // Cenario 2: Configuração manual ou no ambiente Canvas (Tenta conectar)
+                
+                // 1. Inicializar o App
                 if (!getApps().length) {
-                    if (Object.keys(firebaseConfig).length > 0) {
-                        app = initializeApp(firebaseConfig);
-                    } else {
-                        // Se não houver config, a aplicação funcionará, mas não salvará no Firestore real.
-                        console.warn("Firebase Config não encontrada. Apenas a lógica do app rodará, mas o sync não funcionará.");
-                    }
+                    localApp = initializeApp(firebaseConfig);
                 } else {
-                    app = getApp(); // Pega a instância existente
+                    localApp = getApp(); 
                 }
+                
+                app = localApp; 
 
-                if (app) {
-                    // 2. Obter serviços usando a instância 'app'
-                    db = getFirestore(app);
-                    auth = getAuth(app); 
+                // 2. Obter serviços (Usamos variáveis locais para garantir que não são undefined)
+                db = getFirestore(app);
+                localAuth = getAuth(app); 
+                auth = localAuth; 
 
-                    // 3. Autenticação
-                    if (initialAuthToken) {
-                        await signInWithCustomToken(auth, initialAuthToken);
-                    } else {
-                        await signInAnonymously(auth);
-                    }
-                    
-                    // 4. Listener de Estado de Autenticação
-                    onAuthStateChanged(auth, (user) => {
-                        if (user) {
-                            userId = user.uid;
-                            isAuthReady = true;
-                            document.getElementById('firestore-status-alert').textContent = `✅ Ligado ao Firebase como ${user.isAnonymous ? 'Anónimo' : userId}.`;
-                            document.getElementById('firestore-status-alert').classList.remove('bg-red-100', 'text-red-700');
-                            document.getElementById('firestore-status-alert').classList.add('bg-green-100', 'text-green-700');
-                            checkAndDisplayInterface(null); // Inicia a UI do Entregador após autenticação
-                        } else {
-                            isAuthReady = false;
-                            document.getElementById('firestore-status-alert').textContent = `🔴 Falha na autenticação Firebase.`;
-                        }
-                    });
+
+                // 3. Autenticação
+                if (initialAuthToken) {
+                    await signInWithCustomToken(localAuth, initialAuthToken);
                 } else {
-                     // Caso a configuração não exista e o 'app' não tenha sido inicializado.
-                    document.getElementById('firestore-status-alert').textContent = `🔴 Firebase: Configuração não carregada. A aplicação não pode usar o Firestore.`;
+                    await signInAnonymously(localAuth);
                 }
-
+                
+                // 4. Listener de Estado de Autenticação
+                onAuthStateChanged(localAuth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        isAuthReady = true;
+                        document.getElementById('firestore-status-alert').textContent = `✅ Ligado ao Firebase como ${user.isAnonymous ? 'Anónimo' : userId}.`;
+                        document.getElementById('firestore-status-alert').classList.remove('bg-red-100', 'text-red-700');
+                        document.getElementById('firestore-status-alert').classList.add('bg-green-100', 'text-green-700');
+                        checkAndDisplayInterface(null); // Inicia a UI do Entregador após autenticação
+                    } else {
+                        isAuthReady = false;
+                        document.getElementById('firestore-status-alert').textContent = `🔴 Falha na autenticação Firebase.`;
+                        checkAndDisplayInterface(null); // Inicia a UI mesmo com falha de auth
+                    }
+                });
 
             } catch (e) {
                 console.error("Erro fatal ao inicializar Firebase:", e);
-                document.getElementById('firestore-status-alert').textContent = `🔴 ERRO FATAL no Firebase: ${e.message}`;
+                document.getElementById('firestore-status-alert').textContent = `🔴 ERRO FATAL no Firebase: ${e.message}. A sincronização está desativada.`;
+                isAuthReady = false;
+                checkAndDisplayInterface(null); // Em caso de erro fatal, inicia a UI do mesmo modo.
             }
         };
 
