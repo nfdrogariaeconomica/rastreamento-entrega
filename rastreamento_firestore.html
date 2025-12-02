@@ -681,7 +681,7 @@
              document.getElementById('firestore-status-alert').classList.remove('hidden');
 
             try {
-                // Verifica se o app já foi inicializado para evitar o erro "Firebase: Firebase App named '[DEFAULT]' already exists"
+                // 1. Inicializar o App se ainda não estiver inicializado
                 if (!getApps().length) {
                     if (Object.keys(firebaseConfig).length > 0) {
                         app = initializeApp(firebaseConfig);
@@ -692,29 +692,38 @@
                 } else {
                     app = getApp(); // Pega a instância existente
                 }
-                
-                db = getFirestore(app);
-                auth = getAuth(app); // Este era o ponto de falha se o app não estivesse inicializado corretamente
 
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
-                
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        userId = user.uid;
-                        isAuthReady = true;
-                        document.getElementById('firestore-status-alert').textContent = `✅ Ligado ao Firebase como ${user.isAnonymous ? 'Anónimo' : userId}.`;
-                        document.getElementById('firestore-status-alert').classList.remove('bg-red-100', 'text-red-700');
-                        document.getElementById('firestore-status-alert').classList.add('bg-green-100', 'text-green-700');
-                        checkAndDisplayInterface(null); // Inicia a UI do Entregador após autenticação
+                if (app) {
+                    // 2. Obter serviços usando a instância 'app'
+                    db = getFirestore(app);
+                    auth = getAuth(app); 
+
+                    // 3. Autenticação
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth, initialAuthToken);
                     } else {
-                        isAuthReady = false;
-                        document.getElementById('firestore-status-alert').textContent = `🔴 Falha na autenticação Firebase.`;
+                        await signInAnonymously(auth);
                     }
-                });
+                    
+                    // 4. Listener de Estado de Autenticação
+                    onAuthStateChanged(auth, (user) => {
+                        if (user) {
+                            userId = user.uid;
+                            isAuthReady = true;
+                            document.getElementById('firestore-status-alert').textContent = `✅ Ligado ao Firebase como ${user.isAnonymous ? 'Anónimo' : userId}.`;
+                            document.getElementById('firestore-status-alert').classList.remove('bg-red-100', 'text-red-700');
+                            document.getElementById('firestore-status-alert').classList.add('bg-green-100', 'text-green-700');
+                            checkAndDisplayInterface(null); // Inicia a UI do Entregador após autenticação
+                        } else {
+                            isAuthReady = false;
+                            document.getElementById('firestore-status-alert').textContent = `🔴 Falha na autenticação Firebase.`;
+                        }
+                    });
+                } else {
+                     // Caso a configuração não exista e o 'app' não tenha sido inicializado.
+                    document.getElementById('firestore-status-alert').textContent = `🔴 Firebase: Configuração não carregada. A aplicação não pode usar o Firestore.`;
+                }
+
 
             } catch (e) {
                 console.error("Erro fatal ao inicializar Firebase:", e);
