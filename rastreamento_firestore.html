@@ -573,7 +573,8 @@
 
             } catch (error) {
                 console.error("Gemini API Error:", error);
-                outputArea.value = `Falha ao gerar mensagem. ERRO: ${error.message}.`;
+                // MENSAGEM DE ERRO MELHORADA PARA AMBIENTES EXTERNOS
+                outputArea.value = `Falha ao gerar mensagem. ERRO: A chave da API do LLM não está disponível neste ambiente (GitHub Pages). O recurso só funciona dentro do ambiente Canvas.`;
                 outputArea.classList.remove('hidden');
                 outputArea.classList.remove('active');
             } finally {
@@ -638,22 +639,25 @@
                     window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                     }).addTo(mapInstance);
-                    
-                    // Invalida o tamanho após a criação para corrigir problemas de visualização em iframes
-                    setTimeout(() => {
-                        if (mapInstance) {
-                            mapInstance.invalidateSize();
-                            mapInstance.setView([initialLat, initialLon], 15);
-                        }
-                    }, 300);
                 } else {
                     // Remove o marcador anterior se existir, para iniciar limpo
                     if (driverMarker) {
                         mapInstance.removeLayer(driverMarker);
                         driverMarker = null;
                     }
+                    // Apenas move o centro se o mapa já existir
                     mapInstance.setView([initialLat, initialLon], 15);
                 }
+                
+                // CRUCIAL: Força a revalidação do tamanho do mapa 
+                // após o elemento DOM #map se tornar visível (quando displayUI é chamado)
+                setTimeout(() => {
+                    if (mapInstance) {
+                        mapInstance.invalidateSize();
+                        mapInstance.setView([initialLat, initialLon], 15); // Re-center just in case
+                    }
+                }, 300); // Pequeno atraso para garantir o repaint
+                
             } else {
                 console.error("Leaflet não foi carregado corretamente.");
                 document.getElementById('map').innerHTML = '<div class="text-red-500 p-4">Erro: O Mapa (Leaflet) não foi carregado. Recarregue a página.</div>';
