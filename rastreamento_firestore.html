@@ -155,7 +155,7 @@
     <!-- Firebase JS (Módulo de Banco de Dados) -->
     <script type="module">
         import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // --- Configurações Firebase e Constantes ---
@@ -169,7 +169,10 @@
         const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
         const isFirebaseConfigured = Object.keys(firebaseConfig).length > 0 && !!firebaseConfig.projectId;
         
-        let app, db, auth, userId;
+        let app = null;
+        let db = null;
+        let auth = null;
+        let userId = null;
         let isAuthReady = false; // Indica se o Firebase está conectado (com ou sem config)
         let isFirestoreFunctional = false; // Indica se DB e Auth estão OK para operações
 
@@ -716,67 +719,62 @@
             }
         };
 
-        // --- Inicialização do Firebase (Versão Robusta) ---
+        // --- Inicialização do Firebase (Versão Robusta e Defensiva) ---
         const initializeFirebase = async () => {
              updateStatusMessage("1. A inicializar Firebase...", 'blue');
              document.getElementById('firestore-status-alert').classList.remove('hidden');
+             
+             // Define o erro padrão de não configurado
+             const defaultFirebaseError = `🔴 Configuração Firebase não fornecida. Sincronização em tempo real desativada.`;
 
             try {
                 if (isFirebaseConfigured) {
-                     // 1. Inicializar o App com a configuração REAL
+                     // --- PATH DO CANVAS (Configuração Disponível) ---
                     if (!getApps().length) {
                         app = initializeApp(firebaseConfig); 
                     } else {
                         app = getApp(); 
                     }
                     
-                    // 2. Obter serviços
                     db = getFirestore(app);
                     auth = getAuth(app); 
                     
-                    // 3. Autenticação
                     if (initialAuthToken) {
                         await signInWithCustomToken(auth, initialAuthToken);
                     } else {
                         await signInAnonymously(auth);
                     }
                     
-                    // 4. Listener de Estado de Autenticação
-                    onAuthStateChanged(auth, (user) => { 
-                        if (user) {
-                            userId = user.uid;
-                            isAuthReady = true;
-                            isFirestoreFunctional = true; // SUCESSO: DB e Auth OK
-                            document.getElementById('firestore-status-alert').textContent = `✅ Ligado ao Firebase como ${user.isAnonymous ? 'Anónimo' : userId}.`;
-                            document.getElementById('firestore-status-alert').classList.remove('bg-red-100', 'text-red-700');
-                            document.getElementById('firestore-status-alert').classList.add('bg-green-100', 'text-green-700');
-                        } else {
-                            isAuthReady = false;
-                            isFirestoreFunctional = false; // Auth falhou
-                            document.getElementById('firestore-status-alert').textContent = `🔴 Falha na autenticação Firebase.`;
-                        }
-                        // O onAuthStateChanged é o ponto final seguro para iniciar a UI
-                        checkAndDisplayInterface(new URLSearchParams(window.location.search).get('track')); 
-                    });
+                    // Sinaliza sucesso após autenticação
+                    const user = auth.currentUser;
+                    userId = user.uid;
+                    isAuthReady = true;
+                    isFirestoreFunctional = true; 
+                    
+                    document.getElementById('firestore-status-alert').textContent = `✅ Ligado ao Firebase como ${user.isAnonymous ? 'Anónimo' : userId}.`;
+                    document.getElementById('firestore-status-alert').classList.remove('bg-red-100', 'text-red-700');
+                    document.getElementById('firestore-status-alert').classList.add('bg-green-100', 'text-green-700');
+
                 } else {
-                    // CÓDIGO DE FALLBACK SE A CONFIGURAÇÃO ESTIVER VAZIA
+                    // --- PATH DO GITHUB PAGES (Configuração Ausente) ---
+                    // Evita inicializar o Firebase App e a Instância de Auth, prevenindo o erro fatal.
                     isFirestoreFunctional = false;
-                    document.getElementById('firestore-status-alert').textContent = `🔴 Configuração Firebase não fornecida. Sincronização em tempo real desativada.`;
+                    isAuthReady = true; // Permite que a UI inicie e use a lógica do GPS
+                    
+                    document.getElementById('firestore-status-alert').textContent = defaultFirebaseError;
                     document.getElementById('firestore-status-alert').classList.remove('bg-blue-100', 'text-blue-700');
                     document.getElementById('firestore-status-alert').classList.add('bg-red-100', 'text-red-700');
-                    // Avança para a UI sem esperar pelo Auth
-                    checkAndDisplayInterface(new URLSearchParams(window.location.search).get('track')); 
                 }
-
-
             } catch (e) {
                 // Captura qualquer erro de inicialização ou de permissão
                 console.error("Erro ao inicializar Firebase:", e);
-                document.getElementById('firestore-status-alert').textContent = `🔴 ERRO no Firebase: ${e.message}. Sincronização desativada.`;
+                document.getElementById('firestore-status-alert').textContent = `🔴 ERRO FATAL no Firebase: ${e.message}. Sincronização desativada.`;
                 document.getElementById('firestore-status-alert').classList.remove('bg-blue-100', 'text-blue-700');
                 document.getElementById('firestore-status-alert').classList.add('bg-red-100', 'text-red-700');
                 isFirestoreFunctional = false;
-                // Em caso de erro, inicia a UI do mesmo modo.
+                isAuthReady = true; // Força a inicialização da UI mesmo em caso de erro
+            } finally {
+                // Inicia a UI apenas depois de todos os caminhos de inicialização
                 checkAndDisplayInterface(new URLSearchParams(window.location.search).get('track')); 
             }
         };
