@@ -146,13 +146,19 @@
         </div>
 
     </div>
+    
+    <!-- Leaflet JS (Inclusão simples no script tag, sem import module) -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin=""></script>
 
-    <!-- Leaflet JS (Módulo de Mapas) e Firebase JS (Módulo de Banco de Dados) -->
+    <!-- Firebase JS (Módulo de Banco de Dados) -->
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'; // Leaflet Mapas
+        // REMOVIDO: import 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+        // Leaflet agora é carregado via script tag padrão antes deste módulo.
 
         // --- Configurações Firebase e Constantes ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -360,7 +366,9 @@
             const statusInfo = document.getElementById('delivery-status-info');
             const simulateBtn = document.getElementById('simulate-customer-btn');
             
-            const externalTrackingUrl = `https://seusite.com/rastreio/${deliveryId}`; 
+            // O link do cliente deve usar a URL real onde o arquivo está hospedado
+            const currentUrl = window.location.href.split('?')[0]; // Remove query params se houver
+            const externalTrackingUrl = `${currentUrl}?track=${deliveryId}`; 
             
             // Atualiza a UI do Entregador
             startBtn.classList.add('hidden');
@@ -424,7 +432,7 @@
             document.getElementById('whatsapp-message-output').classList.add('hidden');
             document.getElementById('whatsapp-message-output').value = "";
             document.getElementById('simulate-customer-btn').classList.add('hidden');
-            window.currentDeliveryId = null;
+            // window.currentDeliveryId = null; // Mantemos o ID para o LLM gerar a mensagem, mesmo se a rota parou.
             
             // Limpa as cores do status
             document.getElementById('delivery-status-info').className = 'p-3 mb-4 text-sm bg-yellow-100 text-yellow-700 rounded-lg hidden';
@@ -441,12 +449,14 @@
                 updateStatusMessage('Por favor, insira o ID do Pedido antes de simular.', 'red');
                 return;
             }
-            if (!window.deliveryInterval) {
-                updateStatusMessage('A rota precisa estar ativa ("Em Rota") antes de simular a visualização do cliente.', 'red');
-                return;
+            if (!window.currentDeliveryId) {
+                 // O cliente deve rastrear o ID que o entregador *acabou* de iniciar ou que está digitado no campo
+                 // Usamos o deliveryId do input para simulação, mesmo que o interval não esteja rodando (para teste)
+                 // Se o rastreamento real não estiver ativo, o cliente verá "Aguardando Início da Rota"
+                 window.currentDeliveryId = deliveryId;
             }
             // Chama diretamente o seletor de interface
-            checkAndDisplayInterface(deliveryId);
+            checkAndDisplayInterface(window.currentDeliveryId);
         };
 
         window.simulateDriverView = () => {
@@ -468,7 +478,6 @@
 
         // Função auxiliar para fazer fetch com backoff exponencial
         const retryFetch = async (url, options, retries = 3) => {
-            const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=`;
             const API_KEY = ""; 
             for (let i = 0; i < retries; i++) {
                 try {
@@ -498,14 +507,14 @@
         
         // --- Função LLM: Gerar Mensagem de WhatsApp ---
         window.generateWhatsAppMessage = async () => {
-            const deliveryId = window.currentDeliveryId;
+            const deliveryId = window.currentDeliveryId || document.getElementById('delivery-id').value.trim();
             const trackingUrl = document.getElementById('customer-tracking-link').value; 
             const outputArea = document.getElementById('whatsapp-message-output');
             const loadingStatus = document.getElementById('llm-loading-status');
             const generateBtn = document.getElementById('generate-whatsapp-btn');
 
-            if (!deliveryId || !trackingUrl) {
-                outputArea.value = "Erro: Inicie a rota primeiro.";
+            if (!deliveryId || !trackingUrl || trackingUrl.includes('seusite.com')) {
+                outputArea.value = "Erro: Certifique-se de que o ID do Pedido está preenchido e o link de rastreamento foi gerado corretamente.";
                 outputArea.classList.add('active');
                 outputArea.classList.remove('hidden');
                 return;
@@ -580,7 +589,7 @@
                 statusDisplay.classList.add('bg-yellow-100', 'text-yellow-700');
             }
             
-            if (lat && lon && status === "Em Rota") {
+            if (lat && lon && status === "Em Rota" && window.L) { // Verifica se window.L está disponível
                 const newLatLng = [lat, lon];
                 if (!driverMarker) {
                     driverMarker = window.L.marker(newLatLng).addTo(mapInstance) 
@@ -606,26 +615,32 @@
             const initialLon = FALLBACK_LON;
 
             // Inicialização do mapa
-            if (!mapInstance) {
-                mapInstance = window.L.map('map').setView([initialLat, initialLon], 13);
-                window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                }).addTo(mapInstance);
-                
-                setTimeout(() => {
-                    if (mapInstance) {
-                        mapInstance.invalidateSize();
-                        mapInstance.setView([initialLat, initialLon], 15);
+            if (window.L) { // Verifica se window.L está disponível
+                if (!mapInstance) {
+                    mapInstance = window.L.map('map').setView([initialLat, initialLon], 13);
+                    window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    }).addTo(mapInstance);
+                    
+                    setTimeout(() => {
+                        if (mapInstance) {
+                            mapInstance.invalidateSize();
+                            mapInstance.setView([initialLat, initialLon], 15);
+                        }
+                    }, 300);
+                } else {
+                    // Remove o marcador anterior se existir, para iniciar limpo
+                    if (driverMarker) {
+                        mapInstance.removeLayer(driverMarker);
+                        driverMarker = null;
                     }
-                }, 300);
-            } else {
-                // Remove o marcador anterior se existir, para iniciar limpo
-                if (driverMarker) {
-                    mapInstance.removeLayer(driverMarker);
-                    driverMarker = null;
+                    mapInstance.setView([initialLat, initialLon], 15);
                 }
-                mapInstance.setView([initialLat, initialLon], 15);
+            } else {
+                console.error("Leaflet não foi carregado corretamente.");
+                document.getElementById('map').innerHTML = '<div class="text-red-500 p-4">Erro: O Mapa (Leaflet) não foi carregado. Recarregue a página.</div>';
             }
+
 
             // Configura o listener em tempo real no Firestore
             setupRealtimeTracker(deliveryId, updateCustomerTracker);
@@ -665,20 +680,25 @@
              document.getElementById('firestore-status-alert').classList.remove('hidden');
 
             try {
-                if (Object.keys(firebaseConfig).length > 0) {
-                    app = initializeApp(firebaseConfig);
-                    db = getFirestore(app);
-                    auth = getAuth(app);
-
-                    if (initialAuthToken) {
-                        await signInWithCustomToken(auth, initialAuthToken);
+                // Verifica se o app já foi inicializado para evitar o erro "Firebase: Firebase App named '[DEFAULT]' already exists"
+                if (!getApps().length) {
+                    if (Object.keys(firebaseConfig).length > 0) {
+                        app = initializeApp(firebaseConfig);
                     } else {
-                        await signInAnonymously(auth);
+                        // Se não houver config, a aplicação funcionará, mas não salvará no Firestore real.
+                        console.warn("Firebase Config não encontrada. Apenas a lógica do app rodará, mas o sync não funcionará.");
                     }
                 } else {
-                    // Configuração de fallback para o ambiente de desenvolvimento local
-                    // Se não houver config, a aplicação funcionará, mas não salvará no Firestore real.
-                    console.warn("Firebase Config não encontrada. Apenas a lógica do app rodará, mas o sync não funcionará.");
+                    app = getApp(); // Pega a instância existente
+                }
+                
+                db = getFirestore(app);
+                auth = getAuth(app); // Este era o ponto de falha se o app não estivesse inicializado corretamente
+
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
                 }
                 
                 onAuthStateChanged(auth, (user) => {
