@@ -165,7 +165,7 @@
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
         
         // Configuração do Firebase. Se o __firebase_config estiver vazio,
-        // ele cairá no bloco try/catch de inicialização, que agora lida com o erro.
+        // ele será tratado como JSON vazio.
         const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
         const isFirebaseConfigured = Object.keys(firebaseConfig).length > 0 && !!firebaseConfig.projectId;
         
@@ -238,9 +238,11 @@
             };
             
             try {
-                await setDoc(deliveryRef, state);
+                // setDoc é usado para criar ou substituir o documento, garantindo que o status seja sempre o último
+                await setDoc(deliveryRef, state); 
             } catch (e) {
                 console.error("Erro ao salvar no Firestore:", e);
+                // Exibe erro na UI de alerta de status
                 document.getElementById('firestore-status-alert').textContent = `🔴 Erro no Firestore: ${e.message}`;
                 document.getElementById('firestore-status-alert').classList.remove('hidden');
             }
@@ -290,7 +292,8 @@
                         window.isGpsActive = false;
                         errorCallback(error);
                     },
-                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+                    // Opções: alta precisão, tempo limite de 5s, sem cache
+                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 } 
                 );
             } else {
                 window.isGpsActive = false;
@@ -407,7 +410,8 @@
                     updateLocationAndSave,
                     (error) => {
                         console.warn("Falha no rastreamento real:", error);
-                        updateLocationAndSave(FALLBACK_LAT, FALLBACK_LON); // Usa fallback se falhar
+                        // Se o GPS falhar, usa o fallback, mas ainda tenta salvar o status no Firestore (se ativo)
+                        updateLocationAndSave(FALLBACK_LAT, FALLBACK_LON); 
                     }
                 );
             };
@@ -415,7 +419,8 @@
             getLocationAndSave(); // Roda imediatamente
             
             if (!window.deliveryInterval) {
-                window.deliveryInterval = setInterval(getLocationAndSave, 5000); // Roda a cada 5 segundos
+                // Roda a cada 5 segundos
+                window.deliveryInterval = setInterval(getLocationAndSave, 5000); 
             }
         };
 
@@ -436,6 +441,7 @@
                  }
             }
             
+            // Limpa e esconde elementos da interface do entregador
             document.getElementById('start-delivery-btn').classList.remove('hidden');
             document.getElementById('stop-delivery-btn').classList.add('hidden');
             document.getElementById('tracking-link-area').classList.add('hidden');
@@ -554,6 +560,7 @@
                 outputArea.classList.remove('hidden');
                 outputArea.classList.add('active');
                 
+                // Adiciona a função de copiar ao clicar
                 outputArea.onclick = () => {
                     outputArea.select();
                     document.execCommand('copy');
@@ -566,7 +573,7 @@
 
             } catch (error) {
                 console.error("Gemini API Error:", error);
-                outputArea.value = `Falha ao gerar mensagem. ERRO: ${error.message}`;
+                outputArea.value = `Falha ao gerar mensagem. ERRO: ${error.message}.`;
                 outputArea.classList.remove('hidden');
                 outputArea.classList.remove('active');
             } finally {
@@ -603,9 +610,12 @@
                         .bindPopup("🚚 O seu Entregador está aqui!").openPopup();
                     mapInstance.setView(newLatLng, 15);
                 } else {
+                    // Anima o movimento se for uma atualização
                     driverMarker.setLatLng(newLatLng);
+                    // Não move o mapa, para não ser intrusivo no modo cliente
                 }
             } else if (driverMarker) {
+                // Remove o marcador se o status não for "Em Rota"
                 mapInstance.removeLayer(driverMarker);
                 driverMarker = null;
             }
@@ -629,6 +639,7 @@
                         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                     }).addTo(mapInstance);
                     
+                    // Invalida o tamanho após a criação para corrigir problemas de visualização em iframes
                     setTimeout(() => {
                         if (mapInstance) {
                             mapInstance.invalidateSize();
@@ -654,7 +665,6 @@
                  setupRealtimeTracker(deliveryId, updateCustomerTracker);
             } else {
                 updateCustomerTracker({ status: "Rastreamento em Tempo Real Desativado", latitude: FALLBACK_LAT, longitude: FALLBACK_LON });
-                document.getElementById('customer-status-display').classList.add('bg-red-100', 'text-red-700');
                 document.getElementById('firestore-status-alert').textContent = '🔴 A sincronização em tempo real está desativada (Configuração Firebase ausente).';
                 document.getElementById('firestore-status-alert').classList.remove('hidden');
             }
@@ -741,15 +751,17 @@
                             isFirestoreFunctional = false; // Auth falhou
                             document.getElementById('firestore-status-alert').textContent = `🔴 Falha na autenticação Firebase.`;
                         }
-                        checkAndDisplayInterface(null); // Inicia a UI do Entregador
+                        // O onAuthStateChanged é o ponto final seguro para iniciar a UI
+                        checkAndDisplayInterface(new URLSearchParams(window.location.search).get('track')); 
                     });
                 } else {
                     // CÓDIGO DE FALLBACK SE A CONFIGURAÇÃO ESTIVER VAZIA
                     isFirestoreFunctional = false;
                     document.getElementById('firestore-status-alert').textContent = `🔴 Configuração Firebase não fornecida. Sincronização em tempo real desativada.`;
+                    document.getElementById('firestore-status-alert').classList.remove('bg-blue-100', 'text-blue-700');
                     document.getElementById('firestore-status-alert').classList.add('bg-red-100', 'text-red-700');
                     // Avança para a UI sem esperar pelo Auth
-                    checkAndDisplayInterface(null); 
+                    checkAndDisplayInterface(new URLSearchParams(window.location.search).get('track')); 
                 }
 
 
@@ -757,31 +769,22 @@
                 // Captura qualquer erro de inicialização ou de permissão
                 console.error("Erro ao inicializar Firebase:", e);
                 document.getElementById('firestore-status-alert').textContent = `🔴 ERRO no Firebase: ${e.message}. Sincronização desativada.`;
+                document.getElementById('firestore-status-alert').classList.remove('bg-blue-100', 'text-blue-700');
+                document.getElementById('firestore-status-alert').classList.add('bg-red-100', 'text-red-700');
                 isFirestoreFunctional = false;
-                checkAndDisplayInterface(null); // Em caso de erro, inicia a UI do mesmo modo.
+                // Em caso de erro, inicia a UI do mesmo modo.
+                checkAndDisplayInterface(new URLSearchParams(window.location.search).get('track')); 
             }
         };
 
 
         // --- Fluxo de Inicialização Principal ---
-        (async () => {
-            // Este timeout é só para garantir que o Leaflet carregue, já que ele é um script não-módulo
-            await new Promise(resolve => setTimeout(resolve, 100));
-            
-            // Verifica se há um ID de rastreamento na URL (modo cliente)
-            const urlParams = new URLSearchParams(window.location.search);
-            const trackId = urlParams.get('track');
-            
-            if (trackId) {
-                // Se o ID de rastreamento for fornecido na URL, vamos para o modo cliente
-                await initializeFirebase();
-                // O checkAndDisplayInterface será chamado no final da inicialização do Firebase/onAuthStateChanged
-            } else {
-                // Se não houver, vamos para o modo Entregador (padrão)
-                await initializeFirebase();
-                // O checkAndDisplayInterface será chamado no final da inicialização do Firebase/onAuthStateChanged
-            }
-        })();
+        window.onload = function () {
+             // Este pequeno atraso garante que o Leaflet/DOM esteja totalmente carregado
+             setTimeout(() => {
+                initializeFirebase();
+             }, 100);
+        }
     </script>
 </body>
 </html>
