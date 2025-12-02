@@ -155,6 +155,7 @@
     <!-- Firebase JS (Módulo de Banco de Dados) -->
     <script type="module">
         import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        // Importa as funções, mas não as executa se não houver config
         import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
@@ -246,7 +247,7 @@
             } catch (e) {
                 console.error("Erro ao salvar no Firestore:", e);
                 // Exibe erro na UI de alerta de status
-                document.getElementById('firestore-status-alert').textContent = `🔴 Erro no Firestore: ${e.message}`;
+                document.getElementById('firestore-status-alert').textContent = `🔴 Erro ao salvar no Firestore: ${e.message}`;
                 document.getElementById('firestore-status-alert').classList.remove('hidden');
             }
         };
@@ -255,7 +256,10 @@
          * Inicializa o listener em tempo real (onSnapshot) para o modo cliente.
          */
         const setupRealtimeTracker = (deliveryId, updateCallback) => {
-            if (!isFirestoreFunctional) return console.warn("Firestore não está pronto/funcional para rastrear.");
+            if (!isFirestoreFunctional) {
+                 console.warn("Firestore não está pronto/funcional para rastrear.");
+                 return;
+            }
             
             // Cancela o listener anterior se houver
             if (unsubscribeTracker) {
@@ -577,7 +581,7 @@
             } catch (error) {
                 console.error("Gemini API Error:", error);
                 // MENSAGEM DE ERRO MELHORADA PARA AMBIENTES EXTERNOS
-                outputArea.value = `Falha ao gerar mensagem. ERRO: A chave da API do LLM não está disponível neste ambiente (GitHub Pages). O recurso só funciona dentro do ambiente Canvas.`;
+                outputArea.value = `Falha ao gerar mensagem. ERRO: A chave da API do LLM está indisponível ou as permissões no ambiente GitHub Pages estão a bloquear a requisição.`;
                 outputArea.classList.remove('hidden');
                 outputArea.classList.remove('active');
             } finally {
@@ -681,8 +685,9 @@
         const checkAndDisplayInterface = (forcedTrackingId = null) => {
             const trackingId = forcedTrackingId;
 
-            hideAllInterfaces(); 
-
+            // Esconde alertas ao mudar de tela
+            document.getElementById('firestore-status-alert').classList.add('hidden');
+            
             // Cancela o listener do cliente ao sair da visualização do rastreamento
             if (unsubscribeTracker) {
                 unsubscribeTracker();
@@ -700,8 +705,16 @@
                 initCustomerTracker(trackingId);
             } else {
                 // Modo Entregador (Início do app)
+                hideAllInterfaces(); // Esconde tudo primeiro
                 displayUI('driver-interface');
                 checkGpsStatus(); // Verifica o GPS ao iniciar
+                
+                // Re-exibe o alerta de status do Firebase se a sincronização estiver inativa
+                if (!isFirestoreFunctional) {
+                    document.getElementById('firestore-status-alert').textContent = '🔴 Configuração Firebase não fornecida. Sincronização em tempo real desativada.';
+                    document.getElementById('firestore-status-alert').classList.remove('hidden', 'bg-green-100', 'text-green-700');
+                    document.getElementById('firestore-status-alert').classList.add('bg-red-100', 'text-red-700');
+                }
                 
                 // Atualiza o aviso para o entregador
                 if (!isFirestoreFunctional) {
@@ -722,11 +735,7 @@
         // --- Inicialização do Firebase (Versão Robusta e Defensiva) ---
         const initializeFirebase = async () => {
              updateStatusMessage("1. A inicializar Firebase...", 'blue');
-             document.getElementById('firestore-status-alert').classList.remove('hidden');
              
-             // Define o erro padrão de não configurado
-             const defaultFirebaseError = `🔴 Configuração Firebase não fornecida. Sincronização em tempo real desativada.`;
-
             try {
                 if (isFirebaseConfigured) {
                      // --- PATH DO CANVAS (Configuração Disponível) ---
@@ -737,6 +746,8 @@
                     }
                     
                     db = getFirestore(app);
+                    
+                    // Inicializa Auth APENAS se o app estiver OK
                     auth = getAuth(app); 
                     
                     if (initialAuthToken) {
@@ -757,18 +768,18 @@
 
                 } else {
                     // --- PATH DO GITHUB PAGES (Configuração Ausente) ---
-                    // Evita inicializar o Firebase App e a Instância de Auth, prevenindo o erro fatal.
+                    // **CRÍTICO:** Define os flags e sai sem chamar NENHUMA função do Firebase.
                     isFirestoreFunctional = false;
                     isAuthReady = true; // Permite que a UI inicie e use a lógica do GPS
                     
-                    document.getElementById('firestore-status-alert').textContent = defaultFirebaseError;
+                    document.getElementById('firestore-status-alert').textContent = '🔴 Configuração Firebase não fornecida. Sincronização em tempo real desativada.';
                     document.getElementById('firestore-status-alert').classList.remove('bg-blue-100', 'text-blue-700');
                     document.getElementById('firestore-status-alert').classList.add('bg-red-100', 'text-red-700');
                 }
             } catch (e) {
                 // Captura qualquer erro de inicialização ou de permissão
                 console.error("Erro ao inicializar Firebase:", e);
-                document.getElementById('firestore-status-alert').textContent = `🔴 ERRO FATAL no Firebase: ${e.message}. Sincronização desativada.`;
+                document.getElementById('firestore-status-alert').textContent = `🔴 ERRO DE INICIALIZAÇÃO: ${e.message}. Sincronização desativada.`;
                 document.getElementById('firestore-status-alert').classList.remove('bg-blue-100', 'text-blue-700');
                 document.getElementById('firestore-status-alert').classList.add('bg-red-100', 'text-red-700');
                 isFirestoreFunctional = false;
