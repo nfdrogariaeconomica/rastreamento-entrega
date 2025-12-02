@@ -47,12 +47,12 @@
 
         <!-- Mensagem de Carregamento/Status -->
         <div id="status-message" class="p-4 mb-6 text-center text-sm bg-blue-100 text-blue-700 rounded-lg">
-            Iniciando a aplicação...
+            A iniciar a aplicação...
         </div>
         
         <!-- Alerta de Conexão com Firestore -->
         <div id="firestore-status-alert" class="p-4 mb-6 text-center text-sm rounded-lg bg-red-100 text-red-700 hidden">
-            🔴 Conectando ao Firebase...
+            🔴 A ligar ao Firebase...
         </div>
 
         <!-- Interface do Entregador -->
@@ -63,13 +63,13 @@
             <div class="p-4 bg-yellow-100 text-yellow-700 rounded-lg shadow-md border border-yellow-300">
                 <h3 class="font-bold">⚠️ ATENÇÃO: DADOS EM TEMPO REAL (FIREBASE)</h3>
                 <p class="text-sm mt-1">
-                    Esta versão usa o **Firebase Firestore**. A localização é compartilhada em tempo real e funcionará em dispositivos diferentes quando o arquivo for hospedado.
+                    Esta versão usa o **Firebase Firestore**. A localização é partilhada em tempo real e funcionará em dispositivos diferentes quando o arquivo for hospedado.
                 </p>
             </div>
 
             <!-- Diagnóstico de GPS -->
             <div id="gps-status" class="p-4 bg-gray-100 text-gray-700 rounded-lg text-sm flex justify-between items-center">
-                <span>Status do GPS: <span id="gps-result" class="font-semibold text-yellow-600">Verificando...</span></span>
+                <span>Status do GPS: <span id="gps-result" class="font-semibold text-yellow-600">A verificar...</span></span>
                 <button id="check-gps-btn" onclick="checkGpsStatus()" class="py-1 px-3 bg-gray-300 text-gray-800 text-xs rounded-lg hover:bg-gray-400">
                     Diagnóstico GPS
                 </button>
@@ -121,7 +121,7 @@
                         ✨ Gerar Mensagem de Envio por WhatsApp
                     </button>
                     <textarea id="whatsapp-message-output" rows="5" readonly placeholder="A mensagem gerada aparecerá aqui. Clique para copiar e colar no WhatsApp." class="mt-3 w-full p-3 border border-gray-300 rounded-lg text-sm bg-white hidden"></textarea>
-                    <div id="llm-loading-status" class="mt-3 text-center text-sm text-gray-500 hidden">Gerando mensagem...</div>
+                    <div id="llm-loading-status" class="mt-3 text-center text-sm text-gray-500 hidden">A gerar a mensagem...</div>
                 </div>
 
             </div>
@@ -161,6 +161,7 @@
         // Leaflet agora é carregado via script tag padrão antes deste módulo.
 
         // --- Configurações Firebase e Constantes ---
+        // As variáveis __app_id, __firebase_config e __initial_auth_token são fornecidas pelo ambiente Canvas
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
@@ -260,7 +261,7 @@
                     updateCallback(docSnapshot.data());
                 } else {
                     // Estado inicial se o entregador ainda não iniciou
-                    updateCallback({ status: "Aguardando Início da Rota", latitude: FALLBACK_LAT, longitude: FALLBACK_LON });
+                    updateCallback({ status: "A aguardar Início da Rota", latitude: FALLBACK_LAT, longitude: FALLBACK_LON });
                 }
             }, (error) => {
                 console.error("Erro no listener do Firestore:", error);
@@ -300,7 +301,7 @@
             const resultSpan = document.getElementById('gps-result');
             const startBtn = document.getElementById('start-delivery-btn');
             
-            resultSpan.textContent = 'Aguardando permissão...';
+            resultSpan.textContent = 'A aguardar permissão...';
             resultSpan.classList.remove('text-green-600', 'text-red-600');
             resultSpan.classList.add('text-yellow-600');
             startBtn.disabled = true;
@@ -338,7 +339,7 @@
         // --- Driver (Entregador) Logic ---
         window.startDelivery = () => {
             if (!isAuthReady) {
-                updateStatusMessage('Aguarde a conexão com o Firebase antes de iniciar.', 'yellow');
+                updateStatusMessage('Aguarde a ligação ao Firebase antes de iniciar.', 'yellow');
                 return;
             }
 
@@ -348,7 +349,7 @@
                 return;
             }
             if (!window.isGpsActive) {
-                updateStatusMessage('O GPS precisa estar ativo para iniciar a rota. Clique em "Diagnóstico GPS".', 'red');
+                updateStatusMessage('O GPS precisa de estar ativo para iniciar a rota. Clique em "Diagnóstico GPS".', 'red');
                 document.getElementById('gps-status').classList.add('shake-animation');
                 setTimeout(() => document.getElementById('gps-status').classList.remove('shake-animation'), 850);
                 return;
@@ -382,7 +383,7 @@
             const updateLocationAndSave = (lat, lon) => {
                 if (lat && lon) {
                     saveDeliveryState(window.currentDeliveryId, "Em Rota", lat, lon);
-                    statusInfo.textContent = `Em Rota! Localização REAL atualizada: ${new Date().toLocaleTimeString('pt-BR')} (Lat: ${lat.toFixed(6)}, Lon: ${lon.toFixed(6)}) - Salvando no Firestore.`;
+                    statusInfo.textContent = `Em Rota! Localização REAL atualizada: ${new Date().toLocaleTimeString('pt-BR')} (Lat: ${lat.toFixed(6)}, Lon: ${lon.toFixed(6)}) - A salvar no Firestore.`;
                     statusInfo.classList.remove('hidden', 'bg-yellow-100', 'bg-red-100');
                     statusInfo.classList.add('bg-green-100', 'text-green-700');
                 } else {
@@ -393,7 +394,7 @@
             };
             
             // Inicia o rastreamento e o intervalo do GPS
-            updateStatusMessage("Iniciando Rota usando GPS REAL e Firebase...", 'yellow');
+            updateStatusMessage("A iniciar Rota usando GPS REAL e Firebase...", 'yellow');
             
             // Função que tenta obter a localização real e armazena
             const getLocationAndSave = () => {
@@ -452,7 +453,7 @@
             if (!window.currentDeliveryId) {
                  // O cliente deve rastrear o ID que o entregador *acabou* de iniciar ou que está digitado no campo
                  // Usamos o deliveryId do input para simulação, mesmo que o interval não esteja rodando (para teste)
-                 // Se o rastreamento real não estiver ativo, o cliente verá "Aguardando Início da Rota"
+                 // Se o rastreamento real não estiver ativo, o cliente verá "A aguardar Início da Rota"
                  window.currentDeliveryId = deliveryId;
             }
             // Chama diretamente o seletor de interface
@@ -521,7 +522,7 @@
             }
 
             outputArea.classList.add('hidden');
-            loadingStatus.textContent = "Gerando mensagem, aguarde...";
+            loadingStatus.textContent = "A gerar a mensagem, aguarde...";
             loadingStatus.classList.remove('hidden');
             generateBtn.disabled = true;
             
@@ -577,7 +578,7 @@
             
             const lat = data.latitude || FALLBACK_LAT;
             const lon = data.longitude || FALLBACK_LON;
-            const status = data.status || "Aguardando Início da Rota";
+            const status = data.status || "A aguardar Início da Rota";
 
             statusDisplay.textContent = `Status: ${status}`;
             statusDisplay.className = 'mt-4 p-4 text-center text-xl font-bold rounded-lg';
@@ -593,7 +594,7 @@
                 const newLatLng = [lat, lon];
                 if (!driverMarker) {
                     driverMarker = window.L.marker(newLatLng).addTo(mapInstance) 
-                        .bindPopup("🚚 Seu Entregador está aqui!").openPopup();
+                        .bindPopup("🚚 O seu Entregador está aqui!").openPopup();
                     mapInstance.setView(newLatLng, 15);
                 } else {
                     driverMarker.setLatLng(newLatLng);
@@ -605,7 +606,7 @@
         };
 
         const initCustomerTracker = (deliveryId) => {
-            console.log(`[Rastreador] Iniciando rastreamento Firebase para o ID: ${deliveryId}`);
+            console.log(`[Rastreador] A iniciar rastreamento Firebase para o ID: ${deliveryId}`);
             document.getElementById('tracking-delivery-id').textContent = deliveryId;
             hideAllInterfaces(); 
             displayUI('customer-tracker-interface'); 
@@ -665,7 +666,7 @@
 
             if (trackingId) {
                 // Modo Cliente (Rastreador)
-                updateStatusMessage("Carregando Rastreador do Cliente (FIREBASE)...", 'blue');
+                updateStatusMessage("A carregar Rastreador do Cliente (FIREBASE)...", 'blue');
                 initCustomerTracker(trackingId);
             } else {
                 // Modo Entregador (Início do app)
@@ -676,7 +677,7 @@
 
         // --- Inicialização do Firebase ---
         const initializeFirebase = async () => {
-             updateStatusMessage("1. Inicializando Firebase...", 'blue');
+             updateStatusMessage("1. A inicializar Firebase...", 'blue');
              document.getElementById('firestore-status-alert').classList.remove('hidden');
 
             try {
@@ -705,7 +706,7 @@
                     if (user) {
                         userId = user.uid;
                         isAuthReady = true;
-                        document.getElementById('firestore-status-alert').textContent = `✅ Conectado ao Firebase como ${user.isAnonymous ? 'Anônimo' : userId}.`;
+                        document.getElementById('firestore-status-alert').textContent = `✅ Ligado ao Firebase como ${user.isAnonymous ? 'Anónimo' : userId}.`;
                         document.getElementById('firestore-status-alert').classList.remove('bg-red-100', 'text-red-700');
                         document.getElementById('firestore-status-alert').classList.add('bg-green-100', 'text-green-700');
                         checkAndDisplayInterface(null); // Inicia a UI do Entregador após autenticação
@@ -724,6 +725,8 @@
 
         // --- Fluxo de Inicialização Principal ---
         (async () => {
+            // Este timeout é só para garantir que o Leaflet carregue, já que ele é um script não-módulo
+            await new Promise(resolve => setTimeout(resolve, 100));
             await initializeFirebase();
         })();
     </script>
