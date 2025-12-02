@@ -168,6 +168,7 @@
         // Configuração do Firebase. Se o __firebase_config estiver vazio,
         // ele será tratado como JSON vazio.
         const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        // Verifica se a configuração tem projectId, o mínimo necessário para ser considerada "válida"
         const isFirebaseConfigured = Object.keys(firebaseConfig).length > 0 && !!firebaseConfig.projectId;
         
         let app = null;
@@ -487,7 +488,12 @@
         window.copyTrackingLink = () => {
             const linkInput = document.getElementById('customer-tracking-link');
             linkInput.select(); 
-            document.execCommand('copy');
+            // Usa document.execCommand('copy') como fallback para iFrames
+            try {
+                document.execCommand('copy');
+            } catch (err) {
+                console.error('Falha ao copiar:', err);
+            }
             const button = document.querySelector('#tracking-link-area .flex button');
             const originalText = button.textContent;
             button.textContent = "Copiado!";
@@ -570,7 +576,11 @@
                 // Adiciona a função de copiar ao clicar
                 outputArea.onclick = () => {
                     outputArea.select();
-                    document.execCommand('copy');
+                    try {
+                        document.execCommand('copy');
+                    } catch (err) {
+                        console.error('Falha ao copiar:', err);
+                    }
                     const originalValue = outputArea.value;
                     outputArea.value = "COPIADO! Cole no WhatsApp.";
                     setTimeout(() => {
@@ -581,7 +591,7 @@
             } catch (error) {
                 console.error("Gemini API Error:", error);
                 // MENSAGEM DE ERRO MELHORADA PARA AMBIENTES EXTERNOS
-                outputArea.value = `Falha ao gerar mensagem. ERRO: A chave da API do LLM está indisponível ou as permissões no ambiente GitHub Pages estão a bloquear a requisição.`;
+                outputArea.value = `Falha ao gerar mensagem (Código: ${error.message}). Esta funcionalidade LLM (Inteligência Artificial) está indisponível ao hospedar em plataformas externas como o GitHub Pages, pois requer uma chave de API válida e um domínio autorizado.`;
                 outputArea.classList.remove('hidden');
                 outputArea.classList.remove('active');
             } finally {
@@ -611,7 +621,7 @@
                 statusDisplay.classList.add('bg-yellow-100', 'text-yellow-700');
             }
             
-            if (lat && lon && status === "Em Rota" && window.L) { // Verifica se window.L está disponível
+            if (lat && lon && status === "Em Rota" && window.L && mapInstance) { // Verifica se window.L e mapInstance estão disponíveis
                 const newLatLng = [lat, lon];
                 if (!driverMarker) {
                     driverMarker = window.L.marker(newLatLng).addTo(mapInstance) 
@@ -622,7 +632,7 @@
                     driverMarker.setLatLng(newLatLng);
                     // Não move o mapa, para não ser intrusivo no modo cliente
                 }
-            } else if (driverMarker) {
+            } else if (driverMarker && mapInstance) {
                 // Remove o marcador se o status não for "Em Rota"
                 mapInstance.removeLayer(driverMarker);
                 driverMarker = null;
@@ -635,17 +645,23 @@
             hideAllInterfaces(); 
             displayUI('customer-tracker-interface'); 
             
-            // Assume as coordenadas de fallback para a primeira visualização
             const initialLat = FALLBACK_LAT;
             const initialLon = FALLBACK_LON;
 
-            // Inicialização do mapa
-            if (window.L) { // Verifica se window.L está disponível
+            if (window.L) { 
                 if (!mapInstance) {
-                    mapInstance = window.L.map('map').setView([initialLat, initialLon], 13);
-                    window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                    }).addTo(mapInstance);
+                    try {
+                        mapInstance = window.L.map('map').setView([initialLat, initialLon], 13);
+                        window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                        }).addTo(mapInstance);
+                    } catch (e) {
+                         // Captura erro de inicialização do mapa (ex: container invisível)
+                         console.error("Erro na inicialização do Leaflet:", e);
+                         document.getElementById('map').innerHTML = '<div class="text-red-500 p-4">Erro: O Mapa (Leaflet) não foi carregado. Recarregue a página.</div>';
+                         mapInstance = null; // Garante que o estado seja limpo
+                         return; // Sai da função
+                    }
                 } else {
                     // Remove o marcador anterior se existir, para iniciar limpo
                     if (driverMarker) {
@@ -656,14 +672,14 @@
                     mapInstance.setView([initialLat, initialLon], 15);
                 }
                 
-                // CRUCIAL: Força a revalidação do tamanho do mapa 
-                // após o elemento DOM #map se tornar visível (quando displayUI é chamado)
+                // CRUCIAL PARA CORRIGIR O PROBLEMA DE VISUALIZAÇÃO DO MAPA
+                // Garante que o Leaflet calcule corretamente o tamanho do container após ele se tornar visível.
                 setTimeout(() => {
                     if (mapInstance) {
                         mapInstance.invalidateSize();
                         mapInstance.setView([initialLat, initialLon], 15); // Re-center just in case
                     }
-                }, 300); // Pequeno atraso para garantir o repaint
+                }, 300);
                 
             } else {
                 console.error("Leaflet não foi carregado corretamente.");
@@ -770,7 +786,7 @@
                     // --- PATH DO GITHUB PAGES (Configuração Ausente) ---
                     // **CRÍTICO:** Define os flags e sai sem chamar NENHUMA função do Firebase.
                     isFirestoreFunctional = false;
-                    isAuthReady = true; // Permite que a UI inicie e use a lógica do GPS
+                    isAuthReady = true; // Permite que a UI inicie e use a lógica do GPS e o Mapa
                     
                     document.getElementById('firestore-status-alert').textContent = '🔴 Configuração Firebase não fornecida. Sincronização em tempo real desativada.';
                     document.getElementById('firestore-status-alert').classList.remove('bg-blue-100', 'text-blue-700');
@@ -793,10 +809,8 @@
 
         // --- Fluxo de Inicialização Principal ---
         window.onload = function () {
-             // Este pequeno atraso garante que o Leaflet/DOM esteja totalmente carregado
-             setTimeout(() => {
-                initializeFirebase();
-             }, 100);
+             // Chama a inicialização robusta do Firebase
+             initializeFirebase();
         }
     </script>
 </body>
