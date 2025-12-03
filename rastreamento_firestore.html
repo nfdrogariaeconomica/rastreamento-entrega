@@ -1,817 +1,132 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rastreamento de Entregas - FIREBASE REAL-TIME</title>
-    <!-- Tailwind CSS CDN para estilização moderna e responsiva -->
+    <title>Mapa Interativo</title>
+    <!-- Carrega o Tailwind CSS para estilização rápida e responsiva -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Leaflet CSS para o mapa -->
+    <!-- Leaflet CSS para o mapa (Novo) -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
         crossorigin=""/>
+    <!-- Configuração do Google Font: Inter -->
     <style>
-        /* Estilos personalizados */
-        #map { height: 400px; width: 100%; border-radius: 0.5rem; }
-        .bg-gradient-drogaria {
-            background-image: linear-gradient(to right, #10b981, #059669); /* Verde da Saúde */
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
         }
-        /* Estilo para a caixa de mensagem do LLM */
-        #whatsapp-message-output.active {
-            cursor: pointer;
-            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.4); /* Animação de foco verde */
-            transition: box-shadow 0.3s ease;
-        }
-        .shake-animation {
-            animation: shake 0.82s cubic-bezier(.36,.07,.19,.97) both;
-            transform: translate3d(0, 0, 0);
-        }
-        @keyframes shake {
-          10%, 90% { transform: translate3d(-1px, 0, 0); }
-          20%, 80% { transform: translate3d(2px, 0, 0); }
-          30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
-          40%, 60% { transform: translate3d(4px, 0, 0); }
+        #map {
+            height: 85%; /* Ocupa a maior parte da tela */
+            width: 100%;
+            border-radius: 0.5rem; /* Cantos arredondados */
         }
     </style>
 </head>
-<body class="bg-gray-50 min-h-screen font-sans">
+<body class="bg-gray-100 p-4 sm:p-6">
+    <div class="max-w-4xl mx-auto w-full h-full">
+        <!-- Cabeçalho de Instrução -->
+        <h1 class="text-2xl font-bold text-gray-800 mb-4 text-center">Visualizador de Mapa (OpenStreetMap)</h1>
+        <p class="text-sm text-green-600 bg-green-100 p-3 rounded-lg mb-4 text-center">
+            ✅ Solução Aplicada: Tempo limite (timeout) estendido para 10 segundos para garantir o carregamento do Leaflet em redes muito lentas.
+        </p>
 
-    <!-- Container Principal -->
-    <div id="app-container" class="max-w-4xl mx-auto p-4 sm:p-6 lg:p-8">
-        
-        <!-- Cabeçalho Global -->
-        <header class="mb-8 p-4 bg-gradient-drogaria text-white rounded-lg shadow-lg">
-            <h1 class="text-3xl font-bold">📡 Rastreamento de Entregas - FIREBASE</h1>
-            <p class="text-sm opacity-90">Sincronização em tempo real via Firestore (Pronto para App Híbrido).</p>
-        </header>
-
-        <!-- Mensagem de Carregamento/Status -->
-        <div id="status-message" class="p-4 mb-6 text-center text-sm bg-blue-100 text-blue-700 rounded-lg">
-            A iniciar a aplicação...
-        </div>
-        
-        <!-- Alerta de Conexão com Firestore -->
-        <div id="firestore-status-alert" class="p-4 mb-6 text-center text-sm rounded-lg bg-red-100 text-red-700 hidden">
-            🔴 A ligar ao Firebase...
-        </div>
-
-        <!-- Interface do Entregador -->
-        <div id="driver-interface" class="space-y-6 hidden">
-            <h2 class="text-2xl font-semibold text-gray-800">Interface do Entregador (Sua Visão)</h2>
-
-            <!-- AVISO SOBRE A URL MOCK -->
-            <div id="firestore-warning" class="p-4 bg-yellow-100 text-yellow-700 rounded-lg shadow-md border border-yellow-300">
-                <h3 class="font-bold">⚠️ ATENÇÃO: DADOS EM TEMPO REAL (FIREBASE)</h3>
-                <p class="text-sm mt-1">
-                    Esta versão usa o **Firebase Firestore**. A localização é partilhada em tempo real e funcionará em dispositivos diferentes quando o arquivo for hospedado.
-                </p>
-            </div>
-
-            <!-- Diagnóstico de GPS -->
-            <div id="gps-status" class="p-4 bg-gray-100 text-gray-700 rounded-lg text-sm flex justify-between items-center">
-                <span>Status do GPS: <span id="gps-result" class="font-semibold text-yellow-600">A verificar...</span></span>
-                <button id="check-gps-btn" onclick="checkGpsStatus()" class="py-1 px-3 bg-gray-300 text-gray-800 text-xs rounded-lg hover:bg-gray-400">
-                    Diagnóstico GPS
-                </button>
-            </div>
-
-            <!-- Formulário de Pedido -->
-            <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100">
-                <p class="mb-4 text-sm text-gray-600">
-                    ID da Sessão: <span id="driver-id" class="font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-800">DRV-1234</span>
-                </p>
-
-                <label for="delivery-id" class="block text-lg font-medium text-gray-700 mb-2">ID do Pedido (Ex: PED-1234)</label>
-                <input type="text" id="delivery-id" placeholder="Digite o número do pedido" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500 mb-4" value="DROGARIA-101">
-                
-                <div id="delivery-status-info" class="p-3 mb-4 text-sm bg-yellow-100 text-yellow-700 rounded-lg hidden"></div>
-
-                <button id="start-delivery-btn" onclick="startDelivery()" class="w-full py-3 px-4 border border-transparent rounded-lg shadow-sm text-lg font-medium text-white bg-green-600 hover:bg-green-700 focus:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out">
-                    Iniciar Rota de Entrega 🛵
-                </button>
-
-                <button id="stop-delivery-btn" onclick="stopDelivery(false)" class="w-full py-3 px-4 border border-transparent rounded-lg shadow-sm text-lg font-medium text-white bg-red-600 hover:bg-red-700 focus:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 mt-2 transition duration-150 ease-in-out hidden">
-                    Encerrar Rota (Pedido Entregue) 📦
-                </button>
-                
-                <!-- Botão de Simulação -->
-                <button id="simulate-customer-btn" onclick="simulateCustomerView()" class="w-full py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-500 hover:bg-indigo-600 focus:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 mt-4 transition duration-150 ease-in-out hidden">
-                    👀 SIMULAR VISÃO DO CLIENTE
-                </button>
-            </div>
-
-            <!-- Link de Rastreamento (Aparece após iniciar a rota) -->
-            <div id="tracking-link-area" class="bg-green-50 p-6 rounded-xl shadow-md border border-green-200 hidden">
-                <h3 class="text-xl font-semibold text-green-700 mb-3">Link de Rastreamento (Mock)</h3>
-                <p class="text-gray-700 mb-3 text-sm">O link abaixo é apenas um texto. Use o botão de simulação para testar.</p>
-                <div class="flex items-center space-x-2 bg-white border border-dashed border-green-300 rounded-lg p-3">
-                    <input type="text" id="customer-tracking-link" readonly 
-                           class="flex-grow border-none text-sm font-mono text-green-600 bg-transparent overflow-hidden whitespace-nowrap overflow-ellipsis" 
-                           value="https://seusite.com/rastreio/DROGARIA-101"> 
-                    <button onclick="copyTrackingLink()" class="p-2 bg-green-500 text-white rounded-md hover:bg-green-600 transition duration-150 ease-in-out">
-                        Copiar Link
-                    </button>
-                </div>
-                
-
-                <!-- Recurso LLM: Gerador de Mensagem WhatsApp -->
-                <div class="mt-4 pt-4 border-t border-green-200">
-                    <h3 class="text-xl font-semibold text-green-700 mb-3">✨ Mensagem Automática para o Cliente</h3>
-                    <button id="generate-whatsapp-btn" onclick="generateWhatsAppMessage()" class="w-full py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out">
-                        ✨ Gerar Mensagem de Envio por WhatsApp
-                    </button>
-                    <textarea id="whatsapp-message-output" rows="5" readonly placeholder="A mensagem gerada aparecerá aqui. Clique para copiar e colar no WhatsApp." class="mt-3 w-full p-3 border border-gray-300 rounded-lg text-sm bg-white hidden"></textarea>
-                    <div id="llm-loading-status" class="mt-3 text-center text-sm text-gray-500 hidden">A gerar a mensagem...</div>
-                </div>
-
-            </div>
-            
-        </div>
-        
-        <!-- Interface do Cliente -->
-        <div id="customer-tracker-interface" class="space-y-6 hidden">
-            <h2 class="text-2xl font-semibold text-gray-800">Rastreamento do Pedido <span id="tracking-delivery-id" class="text-green-600"></span></h2>
-            
-            <!-- Botão de Retorno -->
-            <button id="simulate-driver-btn" onclick="simulateDriverView()" class="py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-gray-500 hover:bg-gray-600 focus:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 mb-4 transition duration-150 ease-in-out">
-                ⬅️ VOLTAR para Entregador
-            </button>
-
-            <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100">
-                <div id="map"></div>
-                <div id="customer-status-display" class="mt-4 p-4 text-center text-xl font-bold rounded-lg"></div>
-            </div>
-            
-            <p class="text-sm text-gray-500 text-center">Atualização em tempo real via Firestore.</p>
-        </div>
-
+        <!-- Container do Mapa -->
+        <div id="map" class="shadow-xl"></div>
     </div>
-    
-    <!-- Leaflet JS (Inclusão simples no script tag, sem import module) -->
+
+    <!--
+        Carrega o Leaflet JS PRIMEIRO para garantir que L.map esteja definido.
+    -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
         crossorigin=""></script>
 
-    <!-- Firebase JS (Módulo de Banco de Dados) -->
-    <script type="module">
-        import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        // Importa as funções, mas não as executa se não houver config
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
-        // --- Configurações Firebase e Constantes ---
-        
-        // Variáveis fornecidas pelo ambiente Canvas
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        
-        // Configuração do Firebase. Se o __firebase_config estiver vazio,
-        // ele será tratado como JSON vazio.
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        // Verifica se a configuração tem projectId, o mínimo necessário para ser considerada "válida"
-        const isFirebaseConfigured = Object.keys(firebaseConfig).length > 0 && !!firebaseConfig.projectId;
-        
-        let app = null;
-        let db = null;
-        let auth = null;
-        let userId = null;
-        let isAuthReady = false; // Indica se o Firebase está conectado (com ou sem config)
-        let isFirestoreFunctional = false; // Indica se DB e Auth estão OK para operações
-
-        // Coordenadas iniciais de Goiânia Central (Fallback caso o GPS falhe)
-        const FALLBACK_LAT = -16.6869; 
-        const FALLBACK_LON = -49.2644; 
-
-        // --- Variáveis de Estado da Aplicação ---
-        window.deliveryInterval = null;
-        window.currentDeliveryId = null;
-        window.isGpsActive = false;
-        let unsubscribeTracker = null; // Para o listener do onSnapshot
-
-        const STATUS_MSG = document.getElementById('status-message');
-        // Gera um ID de Entregador (Driver ID)
-        const DRIVER_ID = 'DRV-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-        document.getElementById('driver-id').textContent = DRIVER_ID;
-        
-        // --- Funções Auxiliares de UI ---
-        const hideAllInterfaces = () => {
-            document.getElementById('driver-interface').classList.add('hidden');
-            document.getElementById('customer-tracker-interface').classList.add('hidden');
-        };
-
-        const displayUI = (interfaceId) => {
-            STATUS_MSG.classList.add('hidden');
-            document.getElementById(interfaceId).classList.remove('hidden');
-        };
-
-        const updateStatusMessage = (text, type = 'blue') => {
-            STATUS_MSG.textContent = text;
-            STATUS_MSG.className = `p-4 mb-6 text-center text-sm rounded-lg`;
-            if (type === 'blue') {
-                STATUS_MSG.classList.add('bg-blue-100', 'text-blue-700');
-            } else if (type === 'green') {
-                STATUS_MSG.classList.add('bg-green-100', 'text-green-700');
-            } else if (type === 'red') {
-                STATUS_MSG.classList.add('bg-red-100', 'text-red-700');
-            } else if (type === 'yellow') {
-                STATUS_MSG.classList.add('bg-yellow-100', 'text-yellow-700');
-            }
-            STATUS_MSG.classList.remove('hidden');
-        };
-        
-        
-        // --- Operações Firestore (Substituindo LocalStorage) ---
-        
-        const getDeliveryPath = (deliveryId) => {
-             // Caminho público para que o cliente (sem autenticação) possa ler
-            return `/artifacts/${appId}/public/data/deliveries/${deliveryId}`;
-        };
-        
-        /**
-         * Salva o estado atual da entrega no Firestore.
-         */
-        const saveDeliveryState = async (deliveryId, status, lat, lon) => {
-            if (!isFirestoreFunctional) return console.warn("Firestore não está pronto/funcional para salvar dados.");
-            
-            const deliveryRef = doc(db, getDeliveryPath(deliveryId));
-            const state = {
-                status: status,
-                latitude: lat,
-                longitude: lon,
-                driverId: DRIVER_ID,
-                updatedAt: new Date().toISOString()
-            };
-            
-            try {
-                // setDoc é usado para criar ou substituir o documento, garantindo que o status seja sempre o último
-                await setDoc(deliveryRef, state); 
-            } catch (e) {
-                console.error("Erro ao salvar no Firestore:", e);
-                // Exibe erro na UI de alerta de status
-                document.getElementById('firestore-status-alert').textContent = `🔴 Erro ao salvar no Firestore: ${e.message}`;
-                document.getElementById('firestore-status-alert').classList.remove('hidden');
-            }
-        };
-
-        /**
-         * Inicializa o listener em tempo real (onSnapshot) para o modo cliente.
-         */
-        const setupRealtimeTracker = (deliveryId, updateCallback) => {
-            if (!isFirestoreFunctional) {
-                 console.warn("Firestore não está pronto/funcional para rastrear.");
-                 return;
-            }
-            
-            // Cancela o listener anterior se houver
-            if (unsubscribeTracker) {
-                unsubscribeTracker();
-            }
-
-            const deliveryRef = doc(db, getDeliveryPath(deliveryId));
-            
-            // Inicia o novo listener em tempo real
-            unsubscribeTracker = onSnapshot(deliveryRef, (docSnapshot) => {
-                if (docSnapshot.exists()) {
-                    updateCallback(docSnapshot.data());
-                } else {
-                    // Estado inicial se o entregador ainda não iniciou
-                    updateCallback({ status: "A aguardar Início da Rota", latitude: FALLBACK_LAT, longitude: FALLBACK_LON });
-                }
-            }, (error) => {
-                console.error("Erro no listener do Firestore:", error);
-                document.getElementById('firestore-status-alert').textContent = `🔴 Erro de Conexão: ${error.message}`;
-                document.getElementById('firestore-status-alert').classList.remove('hidden');
-            });
-        };
-        
-        // --- Geolocalização REAL (Nativa do Navegador) ---
-
-        /**
-         * Tenta obter a localização real e chama o callback ou trata o erro.
-         */
-        const getRealLocation = (successCallback, errorCallback) => {
-             if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                        window.isGpsActive = true;
-                        successCallback(position.coords.latitude, position.coords.longitude);
-                    },
-                    (error) => {
-                        window.isGpsActive = false;
-                        errorCallback(error);
-                    },
-                    // Opções: alta precisão, tempo limite de 5s, sem cache
-                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 } 
-                );
-            } else {
-                window.isGpsActive = false;
-                errorCallback({ code: 0, message: "Geolocalização não é suportada por este navegador." });
-            }
-        };
-
-        /**
-         * Verifica o status do GPS e atualiza a UI de diagnóstico.
-         */
-        window.checkGpsStatus = () => {
-            const resultSpan = document.getElementById('gps-result');
-            const startBtn = document.getElementById('start-delivery-btn');
-            
-            resultSpan.textContent = 'A aguardar permissão...';
-            resultSpan.classList.remove('text-green-600', 'text-red-600');
-            resultSpan.classList.add('text-yellow-600');
-            startBtn.disabled = true;
-
-            getRealLocation(
-                (lat, lon) => {
-                    resultSpan.textContent = `✅ Sucesso! GPS ativo (Lat: ${lat.toFixed(4)})`;
-                    resultSpan.classList.remove('text-yellow-600', 'text-red-600');
-                    resultSpan.classList.add('text-green-600');
-                    startBtn.disabled = false;
-                    window.isGpsActive = true;
-                },
-                (error) => {
-                    let errorMessage;
-                    if (error.code === 1) {
-                        errorMessage = '❌ Permissão Negada. Habilite o GPS nas configurações.';
-                    } else if (error.code === 2) {
-                        errorMessage = '❌ Posição Indisponível. Tente ao ar livre.';
-                    } else if (error.code === 3) {
-                        errorMessage = '❌ Tempo Esgotado. Tente novamente.';
-                    } else {
-                        errorMessage = `❌ Erro desconhecido: ${error.message}`;
-                    }
-                    resultSpan.textContent = errorMessage;
-                    resultSpan.classList.remove('text-yellow-600', 'text-green-600');
-                    resultSpan.classList.add('text-red-600');
-                    startBtn.disabled = true; // Não permite iniciar sem GPS
-                    window.isGpsActive = false;
-                    document.getElementById('gps-status').classList.add('shake-animation');
-                    setTimeout(() => document.getElementById('gps-status').classList.remove('shake-animation'), 850);
-                }
-            );
-        };
-        
-        // --- Driver (Entregador) Logic ---
-        window.startDelivery = () => {
-            if (!window.isGpsActive) {
-                updateStatusMessage('O GPS precisa de estar ativo para iniciar a rota. Clique em "Diagnóstico GPS".', 'red');
-                document.getElementById('gps-status').classList.add('shake-animation');
-                setTimeout(() => document.getElementById('gps-status').classList.remove('shake-animation'), 850);
-                return;
-            }
-
-            const deliveryId = document.getElementById('delivery-id').value.trim();
-            if (!deliveryId) {
-                updateStatusMessage('Por favor, insira o ID do Pedido.', 'red');
-                return;
-            }
-            
-
-            if (window.deliveryInterval) {
-                 stopDelivery(true);
-            }
-
-            window.currentDeliveryId = deliveryId;
-            const linkArea = document.getElementById('tracking-link-area');
-            const linkInput = document.getElementById('customer-tracking-link');
-            const startBtn = document.getElementById('start-delivery-btn');
-            const stopBtn = document.getElementById('stop-delivery-btn');
-            const statusInfo = document.getElementById('delivery-status-info');
-            const simulateBtn = document.getElementById('simulate-customer-btn');
-            
-            // O link do cliente deve usar a URL real onde o arquivo está hospedado
-            const currentUrl = window.location.href.split('?')[0]; // Remove query params se houver
-            const externalTrackingUrl = `${currentUrl}?track=${deliveryId}`; 
-            
-            // Atualiza a UI do Entregador
-            startBtn.classList.add('hidden');
-            stopBtn.classList.remove('hidden');
-            linkArea.classList.remove('hidden');
-            simulateBtn.classList.remove('hidden');
-            
-            linkInput.value = externalTrackingUrl;
-            
-            // Define a função de atualização que SALVA no Firestore
-            const updateLocationAndSave = (lat, lon) => {
-                let statusMessage = `Em Rota! Localização REAL atualizada: ${new Date().toLocaleTimeString('pt-BR')} (Lat: ${lat.toFixed(6)}, Lon: ${lon.toFixed(6)})`;
-                let statusClass = 'bg-green-100 text-green-700';
-                
-                if (isFirestoreFunctional) {
-                    saveDeliveryState(window.currentDeliveryId, "Em Rota", lat, lon);
-                    statusMessage += " - A salvar no Firestore.";
-                } else {
-                    statusMessage += " - SINCRONIZAÇÃO FIREBASE DESATIVADA.";
-                    statusClass = 'bg-yellow-100 text-yellow-700';
-                }
-                
-                statusInfo.textContent = statusMessage;
-                statusInfo.classList.remove('hidden', 'bg-yellow-100', 'bg-red-100', 'bg-green-100', 'text-yellow-700', 'text-red-700', 'text-green-700');
-                statusInfo.classList.add(statusClass);
-            };
-            
-            // Inicia o rastreamento e o intervalo do GPS
-            updateStatusMessage("A iniciar Rota usando GPS REAL...", 'yellow');
-            
-            // Função que tenta obter a localização real e armazena
-            const getLocationAndSave = () => {
-                 getRealLocation(
-                    updateLocationAndSave,
-                    (error) => {
-                        console.warn("Falha no rastreamento real:", error);
-                        // Se o GPS falhar, usa o fallback, mas ainda tenta salvar o status no Firestore (se ativo)
-                        updateLocationAndSave(FALLBACK_LAT, FALLBACK_LON); 
-                    }
-                );
-            };
-            
-            getLocationAndSave(); // Roda imediatamente
-            
-            if (!window.deliveryInterval) {
-                // Roda a cada 5 segundos
-                window.deliveryInterval = setInterval(getLocationAndSave, 5000); 
-            }
-        };
-
-        window.stopDelivery = async (isSwitching) => {
-            if (window.deliveryInterval) {
-                clearInterval(window.deliveryInterval);
-                window.deliveryInterval = null;
-            }
-
-            // Apenas atualiza o status se for um encerramento real (não apenas uma troca de tela)
-            if (window.currentDeliveryId && !isSwitching) {
-                 if(isFirestoreFunctional) {
-                     // Salva o estado final no Firestore. Não precisamos da lat/lon atual.
-                     await saveDeliveryState(window.currentDeliveryId, "Entregue", FALLBACK_LAT, FALLBACK_LON);
-                     document.getElementById('delivery-status-info').textContent = "Status atualizado para: Entregue! Rota encerrada no Firebase.";
-                 } else {
-                     document.getElementById('delivery-status-info').textContent = "Status atualizado para: Entregue! Sincronização Firebase Desativada.";
-                 }
-            }
-            
-            // Limpa e esconde elementos da interface do entregador
-            document.getElementById('start-delivery-btn').classList.remove('hidden');
-            document.getElementById('stop-delivery-btn').classList.add('hidden');
-            document.getElementById('tracking-link-area').classList.add('hidden');
-            document.getElementById('whatsapp-message-output').classList.add('hidden');
-            document.getElementById('whatsapp-message-output').value = "";
-            document.getElementById('simulate-customer-btn').classList.add('hidden');
-            
-            // Limpa as cores do status
-            document.getElementById('delivery-status-info').className = 'p-3 mb-4 text-sm bg-yellow-100 text-yellow-700 rounded-lg hidden';
-            updateStatusMessage("PRONTO: Pronto para uma nova entrega.", 'blue');
-            
-            // Re-verifica o status do GPS para o próximo início
-            checkGpsStatus(); 
-        };
-        
-        // --- Funções de Simulação de Visualização ---
-        window.simulateCustomerView = () => {
-            const deliveryId = document.getElementById('delivery-id').value.trim();
-            if (!deliveryId) {
-                updateStatusMessage('Por favor, insira o ID do Pedido antes de simular.', 'red');
-                return;
-            }
-            if (!window.currentDeliveryId) {
-                 // Se o rastreamento real não estiver ativo, o cliente verá "A aguardar Início da Rota"
-                 window.currentDeliveryId = deliveryId;
-            }
-            // Chama diretamente o seletor de interface
-            checkAndDisplayInterface(window.currentDeliveryId);
-        };
-
-        window.simulateDriverView = () => {
-            // Chama diretamente o seletor de interface com null
-            checkAndDisplayInterface(null);
-        };
-        
-        window.copyTrackingLink = () => {
-            const linkInput = document.getElementById('customer-tracking-link');
-            linkInput.select(); 
-            // Usa document.execCommand('copy') como fallback para iFrames
-            try {
-                document.execCommand('copy');
-            } catch (err) {
-                console.error('Falha ao copiar:', err);
-            }
-            const button = document.querySelector('#tracking-link-area .flex button');
-            const originalText = button.textContent;
-            button.textContent = "Copiado!";
-            setTimeout(() => {
-                button.textContent = originalText;
-            }, 2000);
-        };
-
-        // Função auxiliar para fazer fetch com backoff exponencial
-        const retryFetch = async (url, options, retries = 3) => {
-            const API_KEY = ""; 
-            for (let i = 0; i < retries; i++) {
-                try {
-                    const response = await fetch(url + API_KEY, options);
-                    if (!response.ok) {
-                        let errorDetail = `API Error: ${response.status} ${response.statusText}`;
-                        try {
-                            const errorBody = await response.json();
-                            errorDetail = errorBody.error?.message || JSON.stringify(errorBody);
-                        } catch (e) { /* silent fail */ }
-
-                        if (response.status === 429 && i < retries - 1) { 
-                            const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
-                            await new Promise(resolve => setTimeout(resolve, delay));
-                            continue;
-                        }
-                        throw new Error(errorDetail);
-                    }
-                    return response.json();
-                } catch (error) {
-                    if (i === retries - 1) throw error;
-                    const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                }
-            }
-        };
-        
-        // --- Função LLM: Gerar Mensagem de WhatsApp ---
-        window.generateWhatsAppMessage = async () => {
-            const deliveryId = window.currentDeliveryId || document.getElementById('delivery-id').value.trim();
-            const trackingUrl = document.getElementById('customer-tracking-link').value; 
-            const outputArea = document.getElementById('whatsapp-message-output');
-            const loadingStatus = document.getElementById('llm-loading-status');
-            const generateBtn = document.getElementById('generate-whatsapp-btn');
-
-            if (!deliveryId || !trackingUrl || trackingUrl.includes('seusite.com')) {
-                outputArea.value = "Erro: Certifique-se de que o ID do Pedido está preenchido e o link de rastreamento foi gerado corretamente.";
-                outputArea.classList.add('active');
-                outputArea.classList.remove('hidden');
-                return;
-            }
-
-            outputArea.classList.add('hidden');
-            loadingStatus.textContent = "A gerar a mensagem, aguarde...";
-            loadingStatus.classList.remove('hidden');
-            generateBtn.disabled = true;
-            
-            const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=`;
-            const systemPrompt = "Você é um assistente de atendimento ao cliente amigável e profissional de uma drogaria. A sua tarefa é criar uma mensagem curta (máximo 4 linhas), direta e muito educada para ser enviada por WhatsApp, confirmando que a entrega acabou de sair para a rota e fornecendo o link de rastreamento em tempo real. Não use emojis.";
-            const userQuery = `Gere a mensagem de confirmação de entrega para o Pedido ID: ${deliveryId}. O link de rastreamento é: ${trackingUrl}`;
-
-            const payload = {
-                contents: [{ parts: [{ text: userQuery }] }],
-                systemInstruction: { parts: [{ text: systemPrompt }] },
-            };
-
-            try {
-                const result = await retryFetch(GEMINI_API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                
-                const text = result?.candidates?.[0]?.content?.parts?.[0]?.text || "Erro ao gerar texto. Resposta vazia.";
-                
-                outputArea.value = text.trim();
-                outputArea.classList.remove('hidden');
-                outputArea.classList.add('active');
-                
-                // Adiciona a função de copiar ao clicar
-                outputArea.onclick = () => {
-                    outputArea.select();
-                    try {
-                        document.execCommand('copy');
-                    } catch (err) {
-                        console.error('Falha ao copiar:', err);
-                    }
-                    const originalValue = outputArea.value;
-                    outputArea.value = "COPIADO! Cole no WhatsApp.";
-                    setTimeout(() => {
-                        outputArea.value = originalValue;
-                    }, 2000);
-                };
-
-            } catch (error) {
-                console.error("Gemini API Error:", error);
-                // MENSAGEM DE ERRO MELHORADA PARA AMBIENTES EXTERNOS
-                outputArea.value = `Falha ao gerar mensagem (Código: ${error.message}). Esta funcionalidade LLM (Inteligência Artificial) está indisponível ao hospedar em plataformas externas como o GitHub Pages, pois requer uma chave de API válida e um domínio autorizado.`;
-                outputArea.classList.remove('hidden');
-                outputArea.classList.remove('active');
-            } finally {
-                loadingStatus.classList.add('hidden');
-                generateBtn.disabled = false;
-            }
-        };
-
-        // --- Customer (Rastreador) Logic ---
+    <script>
+        // Variável global para armazenar a instância do mapa
         let mapInstance = null;
-        let driverMarker = null;
+        let markerInstance = null;
 
-        const updateCustomerTracker = (data) => {
-            const statusDisplay = document.getElementById('customer-status-display');
-            
-            const lat = data.latitude || FALLBACK_LAT;
-            const lon = data.longitude || FALLBACK_LON;
-            const status = data.status || "A aguardar Início da Rota";
+        // Função de inicialização do mapa (agora usando Leaflet)
+        function initMap() {
+            // Ponto central padrão (Exemplo: Rio de Janeiro, Brasil)
+            const defaultCenter = [-22.9068, -43.1729]; // [Latitude, Longitude]
 
-            statusDisplay.textContent = `Status: ${status}`;
-            statusDisplay.className = 'mt-4 p-4 text-center text-xl font-bold rounded-lg';
-            if (status === "Em Rota") {
-                statusDisplay.classList.add('bg-blue-100', 'text-blue-700');
-            } else if (status === "Entregue") {
-                statusDisplay.classList.add('bg-green-100', 'text-green-700');
-            } else {
-                statusDisplay.classList.add('bg-yellow-100', 'text-yellow-700');
-            }
-            
-            if (lat && lon && status === "Em Rota" && window.L && mapInstance) { // Verifica se window.L e mapInstance estão disponíveis
-                const newLatLng = [lat, lon];
-                if (!driverMarker) {
-                    driverMarker = window.L.marker(newLatLng).addTo(mapInstance) 
-                        .bindPopup("🚚 O seu Entregador está aqui!").openPopup();
-                    mapInstance.setView(newLatLng, 15);
-                } else {
-                    // Anima o movimento se for uma atualização
-                    driverMarker.setLatLng(newLatLng);
-                    // Não move o mapa, para não ser intrusivo no modo cliente
-                }
-            } else if (driverMarker && mapInstance) {
-                // Remove o marcador se o status não for "Em Rota"
-                mapInstance.removeLayer(driverMarker);
-                driverMarker = null;
-            }
-        };
-
-        const initCustomerTracker = (deliveryId) => {
-            console.log(`[Rastreador] A iniciar rastreamento para o ID: ${deliveryId}`);
-            document.getElementById('tracking-delivery-id').textContent = deliveryId;
-            hideAllInterfaces(); 
-            displayUI('customer-tracker-interface'); 
-            
-            const initialLat = FALLBACK_LAT;
-            const initialLon = FALLBACK_LON;
-
-            if (window.L) { 
-                if (!mapInstance) {
-                    try {
-                        mapInstance = window.L.map('map').setView([initialLat, initialLon], 13);
-                        window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                        }).addTo(mapInstance);
-                    } catch (e) {
-                         // Captura erro de inicialização do mapa (ex: container invisível)
-                         console.error("Erro na inicialização do Leaflet:", e);
-                         document.getElementById('map').innerHTML = '<div class="text-red-500 p-4">Erro: O Mapa (Leaflet) não foi carregado. Recarregue a página.</div>';
-                         mapInstance = null; // Garante que o estado seja limpo
-                         return; // Sai da função
-                    }
-                } else {
-                    // Remove o marcador anterior se existir, para iniciar limpo
-                    if (driverMarker) {
-                        mapInstance.removeLayer(driverMarker);
-                        driverMarker = null;
-                    }
-                    // Apenas move o centro se o mapa já existir
-                    mapInstance.setView([initialLat, initialLon], 15);
-                }
-                
-                // CRUCIAL PARA CORRIGIR O PROBLEMA DE VISUALIZAÇÃO DO MAPA
-                // Garante que o Leaflet calcule corretamente o tamanho do container após ele se tornar visível.
-                setTimeout(() => {
-                    if (mapInstance) {
-                        mapInstance.invalidateSize();
-                        mapInstance.setView([initialLat, initialLon], 15); // Re-center just in case
-                    }
-                }, 300);
-                
-            } else {
-                console.error("Leaflet não foi carregado corretamente.");
-                document.getElementById('map').innerHTML = '<div class="text-red-500 p-4">Erro: O Mapa (Leaflet) não foi carregado. Recarregue a página.</div>';
+            // VERIFICAÇÃO CRÍTICA AQUI: Confirma se L está definido antes de usar L.map
+            if (typeof L === 'undefined' || typeof L.map !== 'function') {
+                throw new Error("A biblioteca Leaflet não foi totalmente carregada ou L.map não é uma função.");
             }
 
-
-            // Configura o listener em tempo real no Firestore, apenas se estiver ativo
-            if (isFirestoreFunctional) {
-                 setupRealtimeTracker(deliveryId, updateCustomerTracker);
-            } else {
-                updateCustomerTracker({ status: "Rastreamento em Tempo Real Desativado", latitude: FALLBACK_LAT, longitude: FALLBACK_LON });
-                document.getElementById('firestore-status-alert').textContent = '🔴 A sincronização em tempo real está desativada (Configuração Firebase ausente).';
-                document.getElementById('firestore-status-alert').classList.remove('hidden');
-            }
-        };
-        
-        // --- Função para Alternar Interface ---
-        const checkAndDisplayInterface = (forcedTrackingId = null) => {
-            const trackingId = forcedTrackingId;
-
-            // Esconde alertas ao mudar de tela
-            document.getElementById('firestore-status-alert').classList.add('hidden');
-            
-            // Cancela o listener do cliente ao sair da visualização do rastreamento
-            if (unsubscribeTracker) {
-                unsubscribeTracker();
-                unsubscribeTracker = null;
-            }
-            
-            // Limpa o intervalo de rastreamento do entregador se estiver ativo e estivermos indo para a visão do cliente
-            if (trackingId && window.deliveryInterval) {
-                stopDelivery(true);
-            }
-
-            if (trackingId) {
-                // Modo Cliente (Rastreador)
-                updateStatusMessage("A carregar Rastreador do Cliente...", 'blue');
-                initCustomerTracker(trackingId);
-            } else {
-                // Modo Entregador (Início do app)
-                hideAllInterfaces(); // Esconde tudo primeiro
-                displayUI('driver-interface');
-                checkGpsStatus(); // Verifica o GPS ao iniciar
-                
-                // Re-exibe o alerta de status do Firebase se a sincronização estiver inativa
-                if (!isFirestoreFunctional) {
-                    document.getElementById('firestore-status-alert').textContent = '🔴 Configuração Firebase não fornecida. Sincronização em tempo real desativada.';
-                    document.getElementById('firestore-status-alert').classList.remove('hidden', 'bg-green-100', 'text-green-700');
-                    document.getElementById('firestore-status-alert').classList.add('bg-red-100', 'text-red-700');
-                }
-                
-                // Atualiza o aviso para o entregador
-                if (!isFirestoreFunctional) {
-                    document.getElementById('firestore-warning').innerHTML = `
-                        <h3 class="font-bold">⚠️ ATENÇÃO: FIREBASE DESATIVADO</h3>
-                        <p class="text-sm mt-1">
-                            A aplicação está a correr sem as credenciais de configuração do Firebase. O rastreamento em tempo real **NÃO** funcionará. Apenas a lógica do GPS, o Mapa e a função de Mensagem WhatsApp estão ativas.
-                        </p>
-                    `;
-                    document.getElementById('firestore-warning').classList.add('bg-red-100', 'text-red-700', 'border-red-300');
-                } else {
-                     document.getElementById('firestore-warning').classList.remove('bg-red-100', 'text-red-700', 'border-red-300');
-                     document.getElementById('firestore-warning').classList.add('bg-yellow-100', 'text-yellow-700', 'border-yellow-300');
-                }
-            }
-        };
-
-        // --- Inicialização do Firebase (Versão Robusta e Defensiva) ---
-        const initializeFirebase = async () => {
-             updateStatusMessage("1. A inicializar Firebase...", 'blue');
-             
             try {
-                if (isFirebaseConfigured) {
-                     // --- PATH DO CANVAS (Configuração Disponível) ---
-                    if (!getApps().length) {
-                        app = initializeApp(firebaseConfig); 
-                    } else {
-                        app = getApp(); 
-                    }
-                    
-                    db = getFirestore(app);
-                    
-                    // Inicializa Auth APENAS se o app estiver OK
-                    auth = getAuth(app); 
-                    
-                    if (initialAuthToken) {
-                        await signInWithCustomToken(auth, initialAuthToken);
-                    } else {
-                        await signInAnonymously(auth);
-                    }
-                    
-                    // Sinaliza sucesso após autenticação
-                    const user = auth.currentUser;
-                    userId = user.uid;
-                    isAuthReady = true;
-                    isFirestoreFunctional = true; 
-                    
-                    document.getElementById('firestore-status-alert').textContent = `✅ Ligado ao Firebase como ${user.isAnonymous ? 'Anónimo' : userId}.`;
-                    document.getElementById('firestore-status-alert').classList.remove('bg-red-100', 'text-red-700');
-                    document.getElementById('firestore-status-alert').classList.add('bg-green-100', 'text-green-700');
-
-                } else {
-                    // --- PATH DO GITHUB PAGES (Configuração Ausente) ---
-                    // **CRÍTICO:** Define os flags e sai sem chamar NENHUMA função do Firebase.
-                    isFirestoreFunctional = false;
-                    isAuthReady = true; // Permite que a UI inicie e use a lógica do GPS e o Mapa
-                    
-                    document.getElementById('firestore-status-alert').textContent = '🔴 Configuração Firebase não fornecida. Sincronização em tempo real desativada.';
-                    document.getElementById('firestore-status-alert').classList.remove('bg-blue-100', 'text-blue-700');
-                    document.getElementById('firestore-status-alert').classList.add('bg-red-100', 'text-red-700');
+                // Se já existir uma instância, remove-a e limpa (opcional, mas seguro)
+                if (mapInstance) {
+                    mapInstance.remove();
                 }
+
+                // Cria o novo mapa e o renderiza no elemento com id="map"
+                // Usa Leaflet (L) para inicializar o mapa.
+                mapInstance = L.map('map').setView(defaultCenter, 12);
+
+                // Adiciona a camada de mapa (tiles) do OpenStreetMap
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                }).addTo(mapInstance);
+
+                // Adiciona um marcador no centro
+                markerInstance = L.marker(defaultCenter).addTo(mapInstance)
+                    .bindPopup("Ponto Central Padrão").openPopup();
+
             } catch (e) {
-                // Captura qualquer erro de inicialização ou de permissão
-                console.error("Erro ao inicializar Firebase:", e);
-                document.getElementById('firestore-status-alert').textContent = `🔴 ERRO DE INICIALIZAÇÃO: ${e.message}. Sincronização desativada.`;
-                document.getElementById('firestore-status-alert').classList.remove('bg-blue-100', 'text-blue-700');
-                document.getElementById('firestore-status-alert').classList.add('bg-red-100', 'text-red-700');
-                isFirestoreFunctional = false;
-                isAuthReady = true; // Força a inicialização da UI mesmo em caso de erro
-            } finally {
-                // Inicia a UI apenas depois de todos os caminhos de inicialização
-                checkAndDisplayInterface(new URLSearchParams(window.location.search).get('track')); 
+                // Este bloco de erro captura problemas de inicialização do Leaflet
+                console.error("Erro ao inicializar o mapa Leaflet:", e);
+                const mapDiv = document.getElementById("map");
+                mapDiv.innerHTML = `
+                    <div class="flex items-center justify-center h-full text-center p-4">
+                        <p class="text-lg text-red-700">
+                            Erro de carregamento do mapa: ${e.message}.
+                        </p>
+                    </div>
+                `;
             }
-        };
-
-
-        // --- Fluxo de Inicialização Principal ---
-        window.onload = function () {
-             // Chama a inicialização robusta do Firebase
-             initializeFirebase();
         }
+
+        /**
+         * Inicializa o mapa com uma lógica de segurança (polling) para esperar pelo Leaflet.
+         * Parâmetros ajustados para 10 segundos de espera total.
+         */
+        function safeInitMap(retries = 50, delay = 200) { // 50 * 200ms = 10000ms (10 segundos)
+            if (typeof L !== 'undefined' && typeof L.map === 'function') {
+                // A biblioteca está carregada, pode inicializar
+                initMap();
+            } else if (retries > 0) {
+                // A biblioteca ainda não está carregada, tenta novamente
+                setTimeout(() => safeInitMap(retries - 1, delay), delay);
+            } else {
+                // Falhou após múltiplas tentativas
+                const mapDiv = document.getElementById("map");
+                mapDiv.innerHTML = `
+                    <div class="flex items-center justify-center h-full text-center p-4">
+                        <p class="text-lg text-red-700">
+                            Erro fatal: A biblioteca Leaflet não carregou após o tempo limite de 10 segundos. Por favor, verifique a sua ligação à internet ou tente reiniciar a aplicação.
+                        </p>
+                    </div>
+                `;
+            }
+        }
+
+        // Chama a função de inicialização de segurança após o carregamento da janela
+        window.addEventListener('load', () => {
+            const mapDiv = document.getElementById('map');
+            if (mapDiv && mapDiv.offsetHeight < 200) {
+                mapDiv.style.minHeight = '400px';
+            }
+            safeInitMap(); 
+        });
     </script>
 </body>
 </html>
